@@ -41,4 +41,4 @@ jobs:
           ./gradlew \
             -Phangar.channel=${{ steps.meta.outputs.channel }} \
             -Pversion.override=${{ steps.meta.outputs.version }} \
-            hangarPublish
+            publishPluginPublicationToHangar
