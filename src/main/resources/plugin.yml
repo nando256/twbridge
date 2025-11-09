@@ -1,0 +1,14 @@
+name: twbridge
+main: net.nando256.twbridge.TwBridgePlugin
+version: ${version}
+api-version: "1.21"
+author: nando256
+softdepend: []
+commands:
+  twbridge:
+    description: Control twbridge
+    permission: twbridge.admin
+    usage: /twbridge <reload|pair>
+permissions:
+  twbridge.admin:
+    default: op
