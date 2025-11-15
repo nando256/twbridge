@@ -29,6 +29,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 public final class TwBridgePlugin extends JavaPlugin implements Listener {
@@ -164,13 +167,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 return;
             }
             var ownerKey = player.getName();
+            var agentKey = agentMapKey(ownerKey, agentId);
             logDebug("Teleport agent " + agentId + " for " + ownerKey);
-            var existing = agents.get(agentId);
-            if (existing != null && !existing.owner().equalsIgnoreCase(ownerKey)) {
-                logDebug("Teleport failed: agent owned by " + existing.owner());
-                if (onFailure != null) onFailure.accept("agent owned by another player");
-                return;
-            }
+            var existing = agents.get(agentKey);
             ArmorStand stand = existing == null ? null : getAgentEntity(existing.entityId());
             Location target = normalizeLocation(player.getLocation());
             if (stand == null) {
@@ -181,7 +180,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                     if (onFailure != null) onFailure.accept("spawn failed");
                     return;
                 }
-                agents.put(agentId, new AgentEntry(stand.getUniqueId(), ownerKey));
+                agents.put(agentKey, new AgentEntry(stand.getUniqueId(), ownerKey));
             } else {
                 logDebug("Teleporting existing agent " + agentId);
                 stand.teleport(target);
@@ -197,7 +196,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                                 Runnable onSuccess,
                                 Consumer<String> onFailure) {
         runSync(() -> {
-            var entry = agents.get(agentId);
+            var agentKey = agentMapKey(ownerName, agentId);
+            var entry = agents.get(agentKey);
             if (entry == null) {
                 if (onFailure != null) onFailure.accept("agent not found");
                 return;
@@ -208,7 +208,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             }
             var stand = getAgentEntity(entry.entityId());
             if (stand == null) {
-                agents.remove(agentId);
+                agents.remove(agentKey);
                 if (onFailure != null) onFailure.accept("agent not found");
                 return;
             }
@@ -245,7 +245,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                                    Runnable onSuccess,
                                    Consumer<String> onFailure) {
         runSync(() -> {
-            var existing = agents.get(agentId);
+            var agentKey = agentMapKey(ownerName, agentId);
+            var existing = agents.get(agentKey);
             if (existing == null) {
                 if (onFailure != null) onFailure.accept("agent not found");
                 return;
@@ -256,10 +257,32 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             }
             var entity = getAgentEntity(existing.entityId());
             if (entity != null) entity.remove();
-            agents.remove(agentId);
+            agents.remove(agentKey);
             logDebug("Despawned agent " + agentId);
             if (onSuccess != null) onSuccess.run();
         });
+    }
+
+    public String resolveOnlinePlayerName(String name) {
+        if (name == null || name.isBlank()) return null;
+        var resolved = new AtomicReference<String>(null);
+        var latch = new CountDownLatch(1);
+        runSync(() -> {
+            try {
+                var player = resolvePlayer(name);
+                if (player != null) {
+                    resolved.set(player.getName());
+                }
+            } finally {
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await(1, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return resolved.get();
     }
 
     private void cleanupAgents() {
@@ -478,6 +501,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             case "forward", "back", "right", "left" -> direction.trim().toLowerCase(Locale.ROOT);
             default -> null;
         };
+    }
+
+    private static String agentMapKey(String ownerName, String agentId) {
+        var ownerPart = ownerName == null ? "" : ownerName.trim().toLowerCase(Locale.ROOT);
+        var agentPart = agentId == null ? "" : agentId.trim();
+        return ownerPart + "." + agentPart;
     }
 
     private static String firstNonBlank(String... candidates) {

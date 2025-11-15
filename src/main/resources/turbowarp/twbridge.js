@@ -6,6 +6,7 @@
       this.ws = null;
       this.wsUrl = WS_DEFAULT;
       this.sessionId = null;
+      this.boundPlayer = null;
       this.waiters = new Map();
       this.opening = false;
       this.connected = false;
@@ -39,7 +40,7 @@
           }
         } catch {}
       };
-      this.ws.onclose = () => { this.sessionId = null; this.connected = false; };
+      this.ws.onclose = () => { this.sessionId = null; this.boundPlayer = null; this.connected = false; };
       await new Promise((resolve, reject) => {
         this.ws.onopen = () => resolve();
         this.ws.onerror = () => { this.connected = false; reject(new Error('ws open failed')); };
@@ -60,15 +61,23 @@
       });
     }
 
-    async connectAndPair(url, code) {
+    async connectAndPair(url, code, player) {
+      const playerName = String(player || '').trim();
+      if (!playerName) throw new Error('player required');
       await this._ensureWS(url);
-      const res = await this._send({ cmd: 'pair.start', code: String(code || '').trim() });
+      const res = await this._send({
+        cmd: 'pair.start',
+        code: String(code || '').trim(),
+        player: playerName
+      });
       if (!res.sessionId) throw new Error('pairing failed');
       this.sessionId = res.sessionId;
+      this.boundPlayer = playerName;
     }
 
     disconnect() {
       this.sessionId = null;
+      this.boundPlayer = null;
       this.connected = false;
       if (this.ws) {
         try { this.ws.close(); } catch {}
@@ -83,6 +92,10 @@
       return this.connected && this.ws && this.ws.readyState === WebSocket.OPEN;
     }
 
+    currentPlayer() {
+      return this.boundPlayer || '';
+    }
+
     async runCommand(command) {
       if (!this.sessionId) throw new Error('not connected');
       const cmd = String(command || '').trim();
@@ -91,36 +104,36 @@
       return this._send({ cmd: 'command.run', command: cmd });
     }
 
-    async teleportAgent(agentId, owner) {
+    async teleportAgent(agentId) {
       if (!this.sessionId) throw new Error('not connected');
+      if (!this.boundPlayer) throw new Error('player not bound');
       const id = String(agentId || '').trim();
-      const player = String(owner || '').trim();
-      if (!id || !player) throw new Error('agent id and player required');
+      if (!id) throw new Error('agent id required');
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
-      return this._send({ cmd: 'agent.teleportToPlayer', agentId: id, player });
+      return this._send({ cmd: 'agent.teleportToPlayer', agentId: id });
     }
 
-    async despawnAgent(agentId, owner) {
+    async despawnAgent(agentId) {
       if (!this.sessionId) throw new Error('not connected');
+      if (!this.boundPlayer) throw new Error('player not bound');
       const id = String(agentId || '').trim();
-      const player = String(owner || '').trim();
-      if (!id || !player) throw new Error('agent id and player required');
+      if (!id) throw new Error('agent id required');
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
-      return this._send({ cmd: 'agent.despawn', agentId: id, player });
+      return this._send({ cmd: 'agent.despawn', agentId: id });
     }
 
-    async moveAgent(agentId, owner, direction, blocks) {
+    async moveAgent(agentId, direction, blocks) {
       if (!this.sessionId) throw new Error('not connected');
+      if (!this.boundPlayer) throw new Error('player not bound');
       const id = String(agentId || '').trim();
-      const player = String(owner || '').trim();
       const dir = String(direction || '').trim().toLowerCase();
       const stepsRaw = Number(blocks);
-      if (!id || !player) throw new Error('agent id and player required');
+      if (!id) throw new Error('agent id required');
       if (!['forward', 'back', 'right', 'left'].includes(dir)) throw new Error('invalid direction');
       if (!Number.isFinite(stepsRaw)) throw new Error('blocks must be a number');
       const steps = Math.max(1, Math.min(Math.round(Math.abs(stepsRaw)), 64));
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
-      return this._send({ cmd: 'agent.move', agentId: id, player, direction: dir, blocks: steps });
+      return this._send({ cmd: 'agent.move', agentId: id, direction: dir, blocks: steps });
     }
   }
 
@@ -137,10 +150,11 @@
           {
             opcode: 'connect',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'connect ws [URL] with pair code [CODE]',
+            text: 'connect ws [URL] with pair code [CODE] as player [PLAYER]',
             arguments: {
               URL: { type: Scratch.ArgumentType.STRING, defaultValue: WS_DEFAULT },
-              CODE:{ type: Scratch.ArgumentType.STRING, defaultValue: '000000' }
+              CODE:{ type: Scratch.ArgumentType.STRING, defaultValue: '000000' },
+              PLAYER:{ type: Scratch.ArgumentType.STRING, defaultValue: 'Steve' }
             }
           },
           {
@@ -154,6 +168,11 @@
             text: 'connected?'
           },
           {
+            opcode: 'currentPlayer',
+            blockType: Scratch.BlockType.REPORTER,
+            text: 'connected player'
+          },
+          {
             opcode: 'runCommand',
             blockType: Scratch.BlockType.COMMAND,
             text: 'execute [CMD]',
@@ -164,28 +183,25 @@
           {
             opcode: 'teleportAgent',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'agent [ID] teleport to player [PLAYER]',
+            text: 'teleport agent [ID] to my player',
             arguments: {
-              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
-              PLAYER: { type: Scratch.ArgumentType.STRING, defaultValue: 'Steve' }
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' }
             }
           },
           {
             opcode: 'despawnAgent',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'agent [ID] despawn for player [PLAYER]',
+            text: 'despawn agent [ID]',
             arguments: {
-              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
-              PLAYER: { type: Scratch.ArgumentType.STRING, defaultValue: 'Steve' }
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' }
             }
           },
           {
             opcode: 'moveAgent',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'move agent [ID] [DIRECTION] [BLOCKS] blocks for player [PLAYER]',
+            text: 'move agent [ID] [DIRECTION] [BLOCKS] blocks',
             arguments: {
               ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
-              PLAYER: { type: Scratch.ArgumentType.STRING, defaultValue: 'Steve' },
               DIRECTION: {
                 type: Scratch.ArgumentType.STRING,
                 menu: 'agentDirections',
@@ -210,17 +226,21 @@
     }
 
     async connect(args) {
-      await bridge.connectAndPair(String(args.URL), String(args.CODE));
+      await bridge.connectAndPair(
+        String(args.URL),
+        String(args.CODE),
+        String(args.PLAYER || "")
+      );
     }
     disconnect() { bridge.disconnect(); }
     isConnected() { return bridge.isConnected(); }
+    currentPlayer() { return bridge.currentPlayer(); }
     async runCommand(args) { await bridge.runCommand(String(args.CMD || "")); }
-    async teleportAgent(args) { await bridge.teleportAgent(String(args.ID || ""), String(args.PLAYER || "")); }
-    async despawnAgent(args) { await bridge.despawnAgent(String(args.ID || ""), String(args.PLAYER || "")); }
+    async teleportAgent(args) { await bridge.teleportAgent(String(args.ID || "")); }
+    async despawnAgent(args) { await bridge.despawnAgent(String(args.ID || "")); }
     async moveAgent(args) {
       await bridge.moveAgent(
         String(args.ID || ""),
-        String(args.PLAYER || ""),
         args.DIRECTION || "forward",
         Number(args.BLOCKS || 0)
       );

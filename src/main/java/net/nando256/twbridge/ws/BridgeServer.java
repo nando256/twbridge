@@ -8,6 +8,7 @@ import org.json.JSONObject;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -18,6 +19,7 @@ public class BridgeServer extends WebSocketServer {
     private final TwBridgePlugin plugin;
     private final Map<WebSocket, Integer> counters = new ConcurrentHashMap<>();
     private final Map<WebSocket, Session> sessions = new ConcurrentHashMap<>();
+    private final Map<String, WebSocket> playerBindings = new ConcurrentHashMap<>();
     private final Timer timer = new Timer(true);
     private final java.security.SecureRandom rng = new java.security.SecureRandom();
 
@@ -89,8 +91,32 @@ public class BridgeServer extends WebSocketServer {
             var cmd = json.optString("cmd", "");
 
             if ("pair.start".equals(cmd)) {
+                if (sessions.containsKey(conn)) {
+                    err(conn, id, "session already established");
+                    return;
+                }
+                var requestedPlayer = json.optString("player", "").trim();
+                if (requestedPlayer.isEmpty()) {
+                    err(conn, id, "player required");
+                    conn.close(1008, "player required");
+                    return;
+                }
+                var resolvedPlayer = plugin.resolveOnlinePlayerName(requestedPlayer);
+                if (resolvedPlayer == null) {
+                    err(conn, id, "player not online");
+                    conn.close(1008, "player not online");
+                    return;
+                }
                 if (!pairingRequired) {
-                    ok(conn, id, new JSONObject().put("sessionId", UUID.randomUUID().toString()));
+                    var sessId = UUID.randomUUID().toString();
+                    if (!bindPlayer(resolvedPlayer, conn)) {
+                        err(conn, id, "player already bound");
+                        conn.close(1008, "player already bound");
+                        return;
+                    }
+                    sessions.put(conn, new Session(sessId, System.currentTimeMillis(), resolvedPlayer));
+                    plugin.logDebug("Session established for " + conn.getRemoteSocketAddress() + " player=" + resolvedPlayer);
+                    ok(conn, id, new JSONObject().put("sessionId", sessId));
                     return;
                 }
                 var code = json.optString("code", "");
@@ -101,10 +127,15 @@ public class BridgeServer extends WebSocketServer {
                     return;
                 }
                 var sessId = UUID.randomUUID().toString();
-                sessions.put(conn, new Session(sessId, now));
+                if (!bindPlayer(resolvedPlayer, conn)) {
+                    err(conn, id, "player already bound");
+                    conn.close(1008, "player already bound");
+                    return;
+                }
+                sessions.put(conn, new Session(sessId, now, resolvedPlayer));
                 activePairCode = null; pairExpireAt = 0L;
                 ok(conn, id, new JSONObject().put("sessionId", sessId));
-                plugin.logDebug("Session established for " + conn.getRemoteSocketAddress());
+                plugin.logDebug("Session established for " + conn.getRemoteSocketAddress() + " player=" + resolvedPlayer);
                 return;
             }
 
@@ -126,9 +157,14 @@ public class BridgeServer extends WebSocketServer {
 
             if ("agent.teleportToPlayer".equals(cmd)) {
                 var agentId = json.optString("agentId", "").trim();
-                var owner = json.optString("player", "").trim();
-                if (agentId.isEmpty() || owner.isEmpty()) {
-                    err(conn, id, "agentId and player required");
+                if (agentId.isEmpty()) {
+                    err(conn, id, "agentId required");
+                    return;
+                }
+                var session = sessions.get(conn);
+                var owner = session == null ? null : session.player();
+                if (owner == null || owner.isBlank()) {
+                    err(conn, id, "player not bound");
                     return;
                 }
                 plugin.logDebug("agent.teleportToPlayer id=" + agentId + " player=" + owner);
@@ -143,15 +179,20 @@ public class BridgeServer extends WebSocketServer {
 
             if ("agent.move".equals(cmd)) {
                 var agentId = json.optString("agentId", "").trim();
-                var owner = json.optString("player", "").trim();
                 var direction = json.optString("direction", "forward").trim();
                 double blocks = json.has("blocks") ? json.optDouble("blocks", Double.NaN) : 0.0;
-                if (agentId.isEmpty() || owner.isEmpty()) {
-                    err(conn, id, "agentId and player required");
+                if (agentId.isEmpty()) {
+                    err(conn, id, "agentId required");
                     return;
                 }
                 if (!Double.isFinite(blocks)) {
                     err(conn, id, "blocks must be a number");
+                    return;
+                }
+                var session = sessions.get(conn);
+                var owner = session == null ? null : session.player();
+                if (owner == null || owner.isBlank()) {
+                    err(conn, id, "player not bound");
                     return;
                 }
                 plugin.logDebug("agent.move id=" + agentId + " player=" + owner + " dir=" + direction + " blocks=" + blocks);
@@ -168,9 +209,14 @@ public class BridgeServer extends WebSocketServer {
 
             if ("agent.despawn".equals(cmd)) {
                 var agentId = json.optString("agentId", "").trim();
-                var owner = json.optString("player", "").trim();
-                if (agentId.isEmpty() || owner.isEmpty()) {
-                    err(conn, id, "agentId and player required");
+                if (agentId.isEmpty()) {
+                    err(conn, id, "agentId required");
+                    return;
+                }
+                var session = sessions.get(conn);
+                var owner = session == null ? null : session.player();
+                if (owner == null || owner.isBlank()) {
+                    err(conn, id, "player not bound");
                     return;
                 }
                 plugin.logDebug("agent.despawn id=" + agentId + " player=" + owner);
@@ -218,7 +264,11 @@ public class BridgeServer extends WebSocketServer {
     public void onClose(WebSocket conn, int code, String reason, boolean remote) {
         plugin.getLogger().info("[twbridge] WS disconnected: " + conn.getRemoteSocketAddress() + " code=" + code + " reason=" + reason);
         counters.remove(conn);
-        sessions.remove(conn);
+        var session = sessions.remove(conn);
+        if (session != null && session.player() != null) {
+            var normalized = session.player().toLowerCase(Locale.ROOT);
+            playerBindings.remove(normalized, conn);
+        }
     }
 
     @Override
@@ -232,5 +282,14 @@ public class BridgeServer extends WebSocketServer {
         plugin.getLogger().info("[twbridge] BridgeServer listening on " + getAddress());
     }
 
-    private record Session(String sessionId, long createdAt) {}
+    private boolean bindPlayer(String playerName, WebSocket conn) {
+        var normalized = playerName.toLowerCase(Locale.ROOT);
+        var existing = playerBindings.putIfAbsent(normalized, conn);
+        if (existing != null && existing != conn) {
+            return false;
+        }
+        return true;
+    }
+
+    private record Session(String sessionId, long createdAt, String player) {}
 }
