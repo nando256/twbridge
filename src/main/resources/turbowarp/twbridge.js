@@ -108,6 +108,20 @@
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
       return this._send({ cmd: 'agent.despawn', agentId: id, player });
     }
+
+    async moveAgent(agentId, owner, direction, blocks) {
+      if (!this.sessionId) throw new Error('not connected');
+      const id = String(agentId || '').trim();
+      const player = String(owner || '').trim();
+      const dir = String(direction || '').trim().toLowerCase();
+      const stepsRaw = Number(blocks);
+      if (!id || !player) throw new Error('agent id and player required');
+      if (!['forward', 'back', 'right', 'left'].includes(dir)) throw new Error('invalid direction');
+      if (!Number.isFinite(stepsRaw)) throw new Error('blocks must be a number');
+      const steps = Math.max(1, Math.min(Math.round(Math.abs(stepsRaw)), 64));
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
+      return this._send({ cmd: 'agent.move', agentId: id, player, direction: dir, blocks: steps });
+    }
   }
 
   const bridge = new Bridge();
@@ -164,8 +178,34 @@
               ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
               PLAYER: { type: Scratch.ArgumentType.STRING, defaultValue: 'Steve' }
             }
+          },
+          {
+            opcode: 'moveAgent',
+            blockType: Scratch.BlockType.COMMAND,
+            text: 'move agent [ID] [DIRECTION] [BLOCKS] blocks for player [PLAYER]',
+            arguments: {
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
+              PLAYER: { type: Scratch.ArgumentType.STRING, defaultValue: 'Steve' },
+              DIRECTION: {
+                type: Scratch.ArgumentType.STRING,
+                menu: 'agentDirections',
+                defaultValue: 'forward'
+              },
+              BLOCKS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 3 }
+            }
           }
-        ]
+        ],
+        menus: {
+          agentDirections: {
+            acceptReporters: false,
+            items: [
+              { text: 'forward', value: 'forward' },
+              { text: 'back', value: 'back' },
+              { text: 'right', value: 'right' },
+              { text: 'left', value: 'left' }
+            ]
+          }
+        }
       };
     }
 
@@ -177,6 +217,14 @@
     async runCommand(args) { await bridge.runCommand(String(args.CMD || "")); }
     async teleportAgent(args) { await bridge.teleportAgent(String(args.ID || ""), String(args.PLAYER || "")); }
     async despawnAgent(args) { await bridge.despawnAgent(String(args.ID || ""), String(args.PLAYER || "")); }
+    async moveAgent(args) {
+      await bridge.moveAgent(
+        String(args.ID || ""),
+        String(args.PLAYER || ""),
+        args.DIRECTION || "forward",
+        Number(args.BLOCKS || 0)
+      );
+    }
   }
 
   Scratch.extensions.register(new TwBridgeExt());

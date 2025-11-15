@@ -21,6 +21,9 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.util.EulerAngle;
+import org.bukkit.util.Vector;
 
 import java.util.Locale;
 import java.util.Map;
@@ -187,6 +190,56 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         });
     }
 
+    public void handleAgentMove(String agentId,
+                                String ownerName,
+                                String direction,
+                                double blocks,
+                                Runnable onSuccess,
+                                Consumer<String> onFailure) {
+        runSync(() -> {
+            var entry = agents.get(agentId);
+            if (entry == null) {
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            if (!entry.owner().equalsIgnoreCase(ownerName)) {
+                if (onFailure != null) onFailure.accept("agent owned by another player");
+                return;
+            }
+            var stand = getAgentEntity(entry.entityId());
+            if (stand == null) {
+                agents.remove(agentId);
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            var normalizedDirection = normalizeDirection(direction);
+            if (normalizedDirection == null) {
+                if (onFailure != null) onFailure.accept("invalid direction");
+                return;
+            }
+            double distance = Math.max(0, Math.min(Math.abs(blocks), 64.0));
+            if (distance < 0.01) {
+                if (onFailure != null) onFailure.accept("blocks must be greater than 0");
+                return;
+            }
+            var vector = resolveDirectionVector(stand.getLocation(), normalizedDirection);
+            if (vector == null) {
+                if (onFailure != null) onFailure.accept("unable to resolve direction");
+                return;
+            }
+            var origin = stand.getLocation();
+            var offset = vector.multiply(distance);
+            var target = normalizeAgentTarget(origin.clone().add(offset), origin);
+            if (target == null) {
+                if (onFailure != null) onFailure.accept("invalid target");
+                return;
+            }
+            animateAgentMove(stand);
+            stand.teleport(target);
+            if (onSuccess != null) onSuccess.run();
+        });
+    }
+
     public void handleAgentDespawn(String agentId,
                                    String ownerName,
                                    Runnable onSuccess,
@@ -329,6 +382,102 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if (isTrackedEntity(event.getEntity().getUniqueId())) {
             event.setCancelled(true);
         }
+    }
+
+    private void animateAgentMove(ArmorStand stand) {
+        var armForward = new EulerAngle(Math.toRadians(-35), 0, Math.toRadians(5));
+        var armBackward = new EulerAngle(Math.toRadians(35), 0, Math.toRadians(-5));
+        var legForward = new EulerAngle(Math.toRadians(20), 0, 0);
+        var legBackward = new EulerAngle(Math.toRadians(-20), 0, 0);
+        new BukkitRunnable() {
+            private int ticks = 0;
+            private boolean flip = false;
+
+            @Override
+            public void run() {
+                if (!stand.isValid() || stand.isDead()) {
+                    cancel();
+                    return;
+                }
+                flip = !flip;
+                applyPose(flip);
+                ticks++;
+                if (ticks >= 6) {
+                    resetPose();
+                    cancel();
+                }
+            }
+
+            private void applyPose(boolean variant) {
+                if (variant) {
+                    stand.setLeftArmPose(armForward);
+                    stand.setRightArmPose(armBackward);
+                    stand.setLeftLegPose(legBackward);
+                    stand.setRightLegPose(legForward);
+                } else {
+                    stand.setLeftArmPose(armBackward);
+                    stand.setRightArmPose(armForward);
+                    stand.setLeftLegPose(legForward);
+                    stand.setRightLegPose(legBackward);
+                }
+            }
+
+            private void resetPose() {
+                var zero = new EulerAngle(0, 0, 0);
+                stand.setLeftArmPose(zero);
+                stand.setRightArmPose(zero);
+                stand.setLeftLegPose(zero);
+                stand.setRightLegPose(zero);
+            }
+        }.runTaskTimer(this, 0L, 2L);
+    }
+
+    private Location normalizeAgentTarget(Location raw, Location reference) {
+        if (raw == null || raw.getWorld() == null) return raw;
+        double x = Math.floor(raw.getX()) + 0.5;
+        double z = Math.floor(raw.getZ()) + 0.5;
+        double y = Math.floor(raw.getY());
+        Location normalized = new Location(raw.getWorld(), x, y, z);
+        if (reference != null) {
+            normalized.setYaw(reference.getYaw());
+            normalized.setPitch(reference.getPitch());
+        }
+        return normalized;
+    }
+
+    private Vector resolveDirectionVector(Location origin, String direction) {
+        if (origin == null) return null;
+        var forward = origin.getDirection();
+        if (forward == null || forward.lengthSquared() < 1.0E-4) {
+            forward = new Vector(0, 0, 1);
+        }
+        forward.setY(0);
+        if (forward.lengthSquared() < 1.0E-4) {
+            forward = new Vector(0, 0, 1);
+        } else {
+            forward.normalize();
+        }
+        var right = forward.clone().crossProduct(new Vector(0, 1, 0));
+        if (right.lengthSquared() < 1.0E-4) {
+            right = new Vector(1, 0, 0);
+        } else {
+            right.normalize();
+        }
+        return switch (direction) {
+            case "forward" -> forward;
+            case "back" -> forward.clone().multiply(-1);
+            case "right" -> right;
+            case "left" -> right.clone().multiply(-1);
+            default -> null;
+        };
+    }
+
+    private String normalizeDirection(String direction) {
+        if (direction == null) return null;
+        return switch (direction.trim().toLowerCase(Locale.ROOT)) {
+            case "forward", "back", "right", "left" -> direction.trim().toLowerCase(Locale.ROOT);
+            default -> null;
+        };
     }
 
     private static String firstNonBlank(String... candidates) {

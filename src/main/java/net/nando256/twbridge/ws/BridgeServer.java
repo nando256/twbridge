@@ -141,6 +141,31 @@ public class BridgeServer extends WebSocketServer {
                 return;
             }
 
+            if ("agent.move".equals(cmd)) {
+                var agentId = json.optString("agentId", "").trim();
+                var owner = json.optString("player", "").trim();
+                var direction = json.optString("direction", "forward").trim();
+                double blocks = json.has("blocks") ? json.optDouble("blocks", Double.NaN) : 0.0;
+                if (agentId.isEmpty() || owner.isEmpty()) {
+                    err(conn, id, "agentId and player required");
+                    return;
+                }
+                if (!Double.isFinite(blocks)) {
+                    err(conn, id, "blocks must be a number");
+                    return;
+                }
+                plugin.logDebug("agent.move id=" + agentId + " player=" + owner + " dir=" + direction + " blocks=" + blocks);
+                plugin.handleAgentMove(
+                    agentId,
+                    owner,
+                    direction,
+                    blocks,
+                    () -> ok(conn, id, null),
+                    (msg) -> err(conn, id, msg == null ? "move failed" : msg)
+                );
+                return;
+            }
+
             if ("agent.despawn".equals(cmd)) {
                 var agentId = json.optString("agentId", "").trim();
                 var owner = json.optString("player", "").trim();
