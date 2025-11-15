@@ -1,7 +1,7 @@
 ws:
   bindAddress: "0.0.0.0"
   port: 8787
-  requirePairing: true
+  requirePairing: false
   maxMsgPerSecond: 30
   maxMsgBytes: 8192
   originWhitelist:
@@ -16,6 +16,6 @@ http:
     - "*"
   cacheSeconds: 60
 pairing:
-  enabled: true
+  enabled: false
   windowSeconds: 60
 debug: false
