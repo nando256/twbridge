@@ -1,5 +1,53 @@
 (() => {
   const WS_DEFAULT = "ws://127.0.0.1:8787";
+  const TWB_DEFAULT_LANG = "en";
+
+  const TWB_LOCALES = {
+    en: {
+      extName: 'Tw Bridge',
+      blockConnect: 'connect ws [URL] with pair code [CODE] as player [PLAYER]',
+      blockDisconnect: 'disconnect ws',
+      blockIsConnected: 'connected?',
+      blockCurrentPlayer: 'connected player',
+      blockRunCommand: 'execute [CMD]',
+      blockTeleport: 'teleport agent [ID] to my player',
+      blockDespawn: 'despawn agent [ID]',
+      blockMove: 'move agent [ID] [DIRECTION] [BLOCKS] blocks',
+      dirForward: 'forward',
+      dirBack: 'back',
+      dirRight: 'right',
+      dirLeft: 'left'
+    },
+    ja: {
+      extName: 'Tw Bridge',
+      blockConnect: 'WS [URL] にペアコード [CODE] とプレイヤー [PLAYER] で接続',
+      blockDisconnect: 'WS を切断',
+      blockIsConnected: '接続中？',
+      blockCurrentPlayer: '接続中のプレイヤー',
+      blockRunCommand: 'コマンド [CMD] を実行',
+      blockTeleport: 'エージェント [ID] を自分のプレイヤーへテレポート',
+      blockDespawn: 'エージェント [ID] を消す',
+      blockMove: 'エージェント [ID] を [DIRECTION] に [BLOCKS] ブロック移動',
+      dirForward: '前',
+      dirBack: '後ろ',
+      dirRight: '右',
+      dirLeft: '左'
+    }
+  };
+
+  const TWB_ACTIVE_LANG = (() => {
+    const normalized = String(TWB_DEFAULT_LANG || '').trim().toLowerCase().replace(/_/g, '-');
+    if (TWB_LOCALES[normalized]) return normalized;
+    const base = normalized.split('-')[0];
+    if (TWB_LOCALES[base]) return base;
+    return 'en';
+  })();
+
+  function twbText(key) {
+    const fallback = TWB_LOCALES.en || {};
+    const dict = TWB_LOCALES[TWB_ACTIVE_LANG] || fallback;
+    return (dict && dict[key]) || fallback[key] || key;
+  }
 
   class Bridge {
     constructor() {
@@ -143,14 +191,14 @@
     getInfo() {
       return {
         id: 'twbridge',
-        name: 'Tw Bridge',
+        name: twbText('extName'),
         color1: '#4b87ff',
         color2: '#2a5bd7',
         blocks: [
           {
             opcode: 'connect',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'connect ws [URL] with pair code [CODE] as player [PLAYER]',
+            text: twbText('blockConnect'),
             arguments: {
               URL: { type: Scratch.ArgumentType.STRING, defaultValue: WS_DEFAULT },
               CODE:{ type: Scratch.ArgumentType.STRING, defaultValue: '000000' },
@@ -160,22 +208,22 @@
           {
             opcode: 'disconnect',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'disconnect ws'
+            text: twbText('blockDisconnect')
           },
           {
             opcode: 'isConnected',
             blockType: Scratch.BlockType.BOOLEAN,
-            text: 'connected?'
+            text: twbText('blockIsConnected')
           },
           {
             opcode: 'currentPlayer',
             blockType: Scratch.BlockType.REPORTER,
-            text: 'connected player'
+            text: twbText('blockCurrentPlayer')
           },
           {
             opcode: 'runCommand',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'execute [CMD]',
+            text: twbText('blockRunCommand'),
             arguments: {
               CMD: { type: Scratch.ArgumentType.STRING, defaultValue: 'say hello from tw' }
             }
@@ -183,7 +231,7 @@
           {
             opcode: 'teleportAgent',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'teleport agent [ID] to my player',
+            text: twbText('blockTeleport'),
             arguments: {
               ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' }
             }
@@ -191,7 +239,7 @@
           {
             opcode: 'despawnAgent',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'despawn agent [ID]',
+            text: twbText('blockDespawn'),
             arguments: {
               ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' }
             }
@@ -199,7 +247,7 @@
           {
             opcode: 'moveAgent',
             blockType: Scratch.BlockType.COMMAND,
-            text: 'move agent [ID] [DIRECTION] [BLOCKS] blocks',
+            text: twbText('blockMove'),
             arguments: {
               ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
               DIRECTION: {
@@ -215,10 +263,10 @@
           agentDirections: {
             acceptReporters: false,
             items: [
-              { text: 'forward', value: 'forward' },
-              { text: 'back', value: 'back' },
-              { text: 'right', value: 'right' },
-              { text: 'left', value: 'left' }
+              { text: twbText('dirForward'), value: 'forward' },
+              { text: twbText('dirBack'), value: 'back' },
+              { text: twbText('dirRight'), value: 'right' },
+              { text: twbText('dirLeft'), value: 'left' }
             ]
           }
         }
