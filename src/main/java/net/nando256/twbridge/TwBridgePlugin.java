@@ -240,6 +240,41 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         });
     }
 
+    public void handleAgentRotate(String agentId,
+                                  String ownerName,
+                                  String direction,
+                                  Runnable onSuccess,
+                                  Consumer<String> onFailure) {
+        runSync(() -> {
+            var agentKey = agentMapKey(ownerName, agentId);
+            var entry = agents.get(agentKey);
+            if (entry == null) {
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            if (!entry.owner().equalsIgnoreCase(ownerName)) {
+                if (onFailure != null) onFailure.accept("agent owned by another player");
+                return;
+            }
+            var stand = getAgentEntity(entry.entityId());
+            if (stand == null) {
+                agents.remove(agentKey);
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            var turnDir = normalizeTurnDirection(direction);
+            if (turnDir == null) {
+                if (onFailure != null) onFailure.accept("invalid direction");
+                return;
+            }
+            float delta = "left".equals(turnDir) ? -90f : 90f;
+            var loc = stand.getLocation();
+            float newYaw = normalizeYaw(loc.getYaw() + delta);
+            stand.teleport(new Location(loc.getWorld(), loc.getX(), loc.getY(), loc.getZ(), newYaw, loc.getPitch()));
+            if (onSuccess != null) onSuccess.run();
+        });
+    }
+
     public void handleAgentDespawn(String agentId,
                                    String ownerName,
                                    Runnable onSuccess,
@@ -501,6 +536,21 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             case "forward", "back", "right", "left" -> direction.trim().toLowerCase(Locale.ROOT);
             default -> null;
         };
+    }
+
+    private String normalizeTurnDirection(String direction) {
+        if (direction == null) return null;
+        return switch (direction.trim().toLowerCase(Locale.ROOT)) {
+            case "left", "right" -> direction.trim().toLowerCase(Locale.ROOT);
+            default -> null;
+        };
+    }
+
+    private float normalizeYaw(float yaw) {
+        float normalized = yaw % 360f;
+        if (normalized < -180f) normalized += 360f;
+        if (normalized >= 180f) normalized -= 360f;
+        return normalized;
     }
 
     private static String agentMapKey(String ownerName, String agentId) {

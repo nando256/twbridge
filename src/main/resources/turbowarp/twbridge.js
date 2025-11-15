@@ -13,10 +13,13 @@
       blockTeleport: 'teleport agent [ID] to my player',
       blockDespawn: 'despawn agent [ID]',
       blockMove: 'move agent [ID] [DIRECTION] [BLOCKS] blocks',
+      blockRotate: 'turn agent [ID] [TURN]',
       dirForward: 'forward',
       dirBack: 'back',
       dirRight: 'right',
-      dirLeft: 'left'
+      dirLeft: 'left',
+      turnLeft: 'left',
+      turnRight: 'right'
     },
     ja: {
       extName: 'Tw Bridge',
@@ -28,10 +31,13 @@
       blockTeleport: 'エージェント [ID] を自分のプレイヤーへテレポート',
       blockDespawn: 'エージェント [ID] を消す',
       blockMove: 'エージェント [ID] を [DIRECTION] に [BLOCKS] ブロック移動',
+      blockRotate: 'エージェント [ID] の向きを [TURN] に変える',
       dirForward: '前',
       dirBack: '後ろ',
       dirRight: '右',
-      dirLeft: '左'
+      dirLeft: '左',
+      turnLeft: '左',
+      turnRight: '右'
     }
   };
 
@@ -183,6 +189,17 @@
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
       return this._send({ cmd: 'agent.move', agentId: id, direction: dir, blocks: steps });
     }
+
+    async rotateAgent(agentId, turn) {
+      if (!this.sessionId) throw new Error('not connected');
+      if (!this.boundPlayer) throw new Error('player not bound');
+      const id = String(agentId || '').trim();
+      const turnDir = String(turn || '').trim().toLowerCase();
+      if (!id) throw new Error('agent id required');
+      if (!['left', 'right'].includes(turnDir)) throw new Error('invalid turn');
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
+      return this._send({ cmd: 'agent.rotate', agentId: id, direction: turnDir });
+    }
   }
 
   const bridge = new Bridge();
@@ -257,6 +274,19 @@
               },
               BLOCKS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 3 }
             }
+          },
+          {
+            opcode: 'rotateAgent',
+            blockType: Scratch.BlockType.COMMAND,
+            text: twbText('blockRotate'),
+            arguments: {
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
+              TURN: {
+                type: Scratch.ArgumentType.STRING,
+                menu: 'agentTurnDirections',
+                defaultValue: 'left'
+              }
+            }
           }
         ],
         menus: {
@@ -267,6 +297,13 @@
               { text: twbText('dirBack'), value: 'back' },
               { text: twbText('dirRight'), value: 'right' },
               { text: twbText('dirLeft'), value: 'left' }
+            ]
+          },
+          agentTurnDirections: {
+            acceptReporters: false,
+            items: [
+              { text: twbText('turnLeft'), value: 'left' },
+              { text: twbText('turnRight'), value: 'right' }
             ]
           }
         }
@@ -291,6 +328,12 @@
         String(args.ID || ""),
         args.DIRECTION || "forward",
         Number(args.BLOCKS || 0)
+      );
+    }
+    async rotateAgent(args) {
+      await bridge.rotateAgent(
+        String(args.ID || ""),
+        args.TURN || "left"
       );
     }
   }

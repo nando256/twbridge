@@ -207,6 +207,30 @@ public class BridgeServer extends WebSocketServer {
                 return;
             }
 
+            if ("agent.rotate".equals(cmd)) {
+                var agentId = json.optString("agentId", "").trim();
+                var direction = json.optString("direction", "left").trim();
+                if (agentId.isEmpty()) {
+                    err(conn, id, "agentId required");
+                    return;
+                }
+                var session = sessions.get(conn);
+                var owner = session == null ? null : session.player();
+                if (owner == null || owner.isBlank()) {
+                    err(conn, id, "player not bound");
+                    return;
+                }
+                plugin.logDebug("agent.rotate id=" + agentId + " player=" + owner + " dir=" + direction);
+                plugin.handleAgentRotate(
+                    agentId,
+                    owner,
+                    direction,
+                    () -> ok(conn, id, null),
+                    (msg) -> err(conn, id, msg == null ? "rotate failed" : msg)
+                );
+                return;
+            }
+
             if ("agent.despawn".equals(cmd)) {
                 var agentId = json.optString("agentId", "").trim();
                 if (agentId.isEmpty()) {
