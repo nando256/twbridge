@@ -228,7 +228,7 @@
       const dir = String(direction || '').trim().toLowerCase();
       const stepsRaw = Number(blocks);
       if (!id) throw new Error('agent id required');
-      if (!['forward', 'back', 'right', 'left'].includes(dir)) throw new Error('invalid direction');
+      if (!['forward', 'back', 'right', 'left', 'up', 'down'].includes(dir)) throw new Error('invalid direction');
       if (!Number.isFinite(stepsRaw)) throw new Error('blocks must be a number');
       const steps = Math.max(1, Math.min(Math.round(Math.abs(stepsRaw)), 64));
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
@@ -415,7 +415,9 @@
               { text: twbText('dirForward'), value: 'forward' },
               { text: twbText('dirBack'), value: 'back' },
               { text: twbText('dirRight'), value: 'right' },
-              { text: twbText('dirLeft'), value: 'left' }
+              { text: twbText('dirLeft'), value: 'left' },
+              { text: twbText('dirUp'), value: 'up' },
+              { text: twbText('dirDown'), value: 'down' }
             ]
           },
           agentTurnDirections: {
