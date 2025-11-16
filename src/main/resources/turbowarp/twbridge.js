@@ -14,10 +14,15 @@
       blockDespawn: 'despawn agent [ID]',
       blockMove: 'move agent [ID] [DIRECTION] [BLOCKS] blocks',
       blockRotate: 'turn agent [ID] [TURN]',
+      blockSlotActivate: 'activate agent [ID] slot [SLOT]',
+      blockSlotSet: 'set agent [ID] slot [SLOT] to [BLOCK] x [COUNT]',
+      blockPlace: 'place from agent [ID] toward [DIR]',
       dirForward: 'forward',
       dirBack: 'back',
       dirRight: 'right',
       dirLeft: 'left',
+      dirUp: 'up',
+      dirDown: 'down',
       turnLeft: 'left',
       turnRight: 'right'
     },
@@ -32,10 +37,15 @@
       blockDespawn: 'エージェント [ID] を消す',
       blockMove: 'エージェント [ID] を [DIRECTION] に [BLOCKS] ブロック移動',
       blockRotate: 'エージェント [ID] の向きを [TURN] に変える',
+      blockSlotActivate: 'エージェント [ID] のスロット [SLOT] を有効にする',
+      blockSlotSet: 'エージェント [ID] のスロット [SLOT] に [BLOCK] を [COUNT] 個セット',
+      blockPlace: 'エージェント [ID] に [DIR] へ置かせる',
       dirForward: '前',
       dirBack: '後ろ',
       dirRight: '右',
       dirLeft: '左',
+      dirUp: '上',
+      dirDown: '下',
       turnLeft: '左',
       turnRight: '右'
     }
@@ -61,6 +71,7 @@
       this.wsUrl = WS_DEFAULT;
       this.sessionId = null;
       this.boundPlayer = null;
+      this.blockChoices = [];
       this.waiters = new Map();
       this.opening = false;
       this.connected = false;
@@ -150,6 +161,21 @@
       return this.boundPlayer || '';
     }
 
+    setAvailableBlocks(blocks) {
+      if (!Array.isArray(blocks)) {
+        this.blockChoices = [];
+        return;
+      }
+      this.blockChoices = blocks
+        .map(block => {
+          const id = String(block.id || '').trim();
+          const name = String(block.name || '').trim();
+          if (!id) return null;
+          return { id, name: name || id };
+        })
+        .filter(Boolean);
+    }
+
     async runCommand(command) {
       if (!this.sessionId) throw new Error('not connected');
       const cmd = String(command || '').trim();
@@ -199,6 +225,43 @@
       if (!['left', 'right'].includes(turnDir)) throw new Error('invalid turn');
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
       return this._send({ cmd: 'agent.rotate', agentId: id, direction: turnDir });
+    }
+
+    async activateAgentSlot(agentId, slot) {
+      if (!this.sessionId) throw new Error('not connected');
+      if (!this.boundPlayer) throw new Error('player not bound');
+      const id = String(agentId || '').trim();
+      const slotNum = Number(slot);
+      if (!id) throw new Error('agent id required');
+      if (!Number.isInteger(slotNum) || slotNum < 1 || slotNum > 27) throw new Error('slot must be 1-27');
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
+      return this._send({ cmd: 'agent.slotActivate', agentId: id, slot: slotNum });
+    }
+
+    async setAgentSlotBlock(agentId, block, amount, slot) {
+        if (!this.sessionId) throw new Error('not connected');
+        if (!this.boundPlayer) throw new Error('player not bound');
+        const id = String(agentId || '').trim();
+        const blockId = String(block || '').trim();
+        const qty = Number(amount);
+        const slotNum = Number(slot);
+        if (!id) throw new Error('agent id required');
+        if (!blockId) throw new Error('block required');
+        if (!Number.isInteger(qty) || qty < 1 || qty > 64) throw new Error('amount must be 1-64');
+        if (!Number.isInteger(slotNum) || slotNum < 1 || slotNum > 27) throw new Error('slot must be 1-27');
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
+      return this._send({ cmd: 'agent.slotSetBlock', agentId: id, block: blockId, amount: qty, slot: slotNum });
+    }
+
+    async placeBlock(agentId, dir) {
+      if (!this.sessionId) throw new Error('not connected');
+      if (!this.boundPlayer) throw new Error('player not bound');
+      const id = String(agentId || '').trim();
+      const direction = String(dir || '').trim().toLowerCase();
+      if (!id) throw new Error('agent id required');
+      if (!['forward','back','left','right','up','down'].includes(direction)) throw new Error('invalid direction');
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
+      return this._send({ cmd: 'agent.place', agentId: id, direction });
     }
   }
 
@@ -287,6 +350,39 @@
                 defaultValue: 'left'
               }
             }
+          },
+          {
+            opcode: 'activateAgentSlot',
+            blockType: Scratch.BlockType.COMMAND,
+            text: twbText('blockSlotActivate'),
+            arguments: {
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
+              SLOT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 }
+            }
+          },
+          {
+            opcode: 'setAgentSlotBlock',
+            blockType: Scratch.BlockType.COMMAND,
+            text: twbText('blockSlotSet'),
+            arguments: {
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
+              BLOCK: { type: Scratch.ArgumentType.STRING, defaultValue: 'stone' },
+              COUNT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 16 },
+              SLOT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 }
+            }
+          },
+          {
+            opcode: 'placeBlock',
+            blockType: Scratch.BlockType.COMMAND,
+            text: twbText('blockPlace'),
+            arguments: {
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
+              DIR: {
+                type: Scratch.ArgumentType.STRING,
+                menu: 'agentPlaceDirections',
+                defaultValue: 'forward'
+              }
+            }
           }
         ],
         menus: {
@@ -305,6 +401,17 @@
               { text: twbText('turnLeft'), value: 'left' },
               { text: twbText('turnRight'), value: 'right' }
             ]
+          },
+          agentPlaceDirections: {
+            acceptReporters: false,
+            items: [
+              { text: twbText('dirForward'), value: 'forward' },
+              { text: twbText('dirBack'), value: 'back' },
+              { text: twbText('dirRight'), value: 'right' },
+              { text: twbText('dirLeft'), value: 'left' },
+              { text: twbText('dirUp'), value: 'up' },
+              { text: twbText('dirDown'), value: 'down' }
+            ]
           }
         }
       };
@@ -316,6 +423,13 @@
         String(args.CODE),
         String(args.PLAYER || "")
       );
+      try {
+        await bridge._ensureWS();
+        const res = await bridge._send({ cmd: 'blocks.list' });
+        if (res && Array.isArray(res.blocks)) {
+          bridge.setAvailableBlocks(res.blocks);
+        }
+      } catch (e) { /* ignore fetch failures */ }
     }
     disconnect() { bridge.disconnect(); }
     isConnected() { return bridge.isConnected(); }
@@ -334,6 +448,26 @@
       await bridge.rotateAgent(
         String(args.ID || ""),
         args.TURN || "left"
+      );
+    }
+    async activateAgentSlot(args) {
+      await bridge.activateAgentSlot(
+        String(args.ID || ""),
+        Number(args.SLOT || 1)
+      );
+    }
+    async setAgentSlotBlock(args) {
+      await bridge.setAgentSlotBlock(
+        String(args.ID || ""),
+        String(args.BLOCK || "stone"),
+        Number(args.COUNT || 1),
+        Number(args.SLOT || 1)
+      );
+    }
+    async placeBlock(args) {
+      await bridge.placeBlock(
+        String(args.ID || ""),
+        args.DIR || "forward"
       );
     }
   }

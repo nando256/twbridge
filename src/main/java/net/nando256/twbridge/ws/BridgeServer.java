@@ -4,6 +4,7 @@ import net.nando256.twbridge.TwBridgePlugin;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.net.InetAddress;
@@ -227,6 +228,107 @@ public class BridgeServer extends WebSocketServer {
                     direction,
                     () -> ok(conn, id, null),
                     (msg) -> err(conn, id, msg == null ? "rotate failed" : msg)
+                );
+                return;
+            }
+
+            if ("agent.slotActivate".equals(cmd)) {
+                var agentId = json.optString("agentId", "").trim();
+                int slot = json.optInt("slot", -1);
+                if (agentId.isEmpty()) {
+                    err(conn, id, "agentId required");
+                    return;
+                }
+                if (slot < 1 || slot > 27) {
+                    err(conn, id, "slot must be 1-27");
+                    return;
+                }
+                var session = sessions.get(conn);
+                var owner = session == null ? null : session.player();
+                if (owner == null || owner.isBlank()) {
+                    err(conn, id, "player not bound");
+                    return;
+                }
+                plugin.logDebug("agent.slotActivate id=" + agentId + " player=" + owner + " slot=" + slot);
+                plugin.handleAgentSlotActivate(
+                    agentId,
+                    owner,
+                    slot,
+                    () -> ok(conn, id, null),
+                    (msg) -> err(conn, id, msg == null ? "slot activate failed" : msg)
+                );
+                return;
+            }
+
+            if ("blocks.list".equals(cmd)) {
+                var array = new JSONArray();
+                plugin.getAvailableBlocks().forEach(block ->
+                    array.put(new JSONObject().put("id", block.id()).put("name", block.name()))
+                );
+                ok(conn, id, new JSONObject().put("blocks", array));
+                return;
+            }
+
+            if ("agent.place".equals(cmd)) {
+                var agentId = json.optString("agentId", "").trim();
+                var direction = json.optString("direction", "forward").trim();
+                if (agentId.isEmpty()) {
+                    err(conn, id, "agentId required");
+                    return;
+                }
+                var session = sessions.get(conn);
+                var owner = session == null ? null : session.player();
+                if (owner == null || owner.isBlank()) {
+                    err(conn, id, "player not bound");
+                    return;
+                }
+                plugin.logDebug("agent.place id=" + agentId + " player=" + owner + " dir=" + direction);
+                plugin.handleAgentPlace(
+                    agentId,
+                    owner,
+                    direction,
+                    () -> ok(conn, id, null),
+                    (msg) -> err(conn, id, msg == null ? "place failed" : msg)
+                );
+                return;
+            }
+
+            if ("agent.slotSetBlock".equals(cmd)) {
+                var agentId = json.optString("agentId", "").trim();
+                var block = json.optString("block", "").trim();
+                int amount = json.optInt("amount", -1);
+                int slot = json.optInt("slot", -1);
+                if (agentId.isEmpty()) {
+                    err(conn, id, "agentId required");
+                    return;
+                }
+                if (slot < 1 || slot > 27) {
+                    err(conn, id, "slot must be 1-27");
+                    return;
+                }
+                if (amount < 1 || amount > 64) {
+                    err(conn, id, "amount must be 1-64");
+                    return;
+                }
+                if (block.isEmpty()) {
+                    err(conn, id, "block required");
+                    return;
+                }
+                var session = sessions.get(conn);
+                var owner = session == null ? null : session.player();
+                if (owner == null || owner.isBlank()) {
+                    err(conn, id, "player not bound");
+                    return;
+                }
+                plugin.logDebug("agent.slotSetBlock id=" + agentId + " player=" + owner + " slot=" + slot + " block=" + block + " amount=" + amount);
+                plugin.handleAgentSlotAssignBlock(
+                    agentId,
+                    owner,
+                    block,
+                    amount,
+                    slot,
+                    () -> ok(conn, id, null),
+                    (msg) -> err(conn, id, msg == null ? "slot set failed" : msg)
                 );
                 return;
             }

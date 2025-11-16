@@ -25,6 +25,9 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -38,7 +41,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private BridgeServer wsServer;
     private TwHttpServer httpServer;
     private final Map<String, AgentEntry> agents = new ConcurrentHashMap<>();
+    private final Map<String, AgentInventory> agentInventories = new ConcurrentHashMap<>();
     private boolean debug;
+    private volatile List<BlockEntry> cachedBlockList;
 
     @Override
     public void onEnable() {
@@ -171,6 +176,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             logDebug("Teleport agent " + agentId + " for " + ownerKey);
             var existing = agents.get(agentKey);
             ArmorStand stand = existing == null ? null : getAgentEntity(existing.entityId());
+            var inventory = agentInventories.computeIfAbsent(agentKey, k -> new AgentInventory());
             Location target = normalizeLocation(player.getLocation());
             if (stand == null) {
                 logDebug("Spawning new agent " + agentId);
@@ -185,6 +191,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 logDebug("Teleporting existing agent " + agentId);
                 stand.teleport(target);
             }
+            applyActiveSlotToStand(stand, inventory);
             if (onSuccess != null) onSuccess.run();
         });
     }
@@ -293,7 +300,137 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             var entity = getAgentEntity(existing.entityId());
             if (entity != null) entity.remove();
             agents.remove(agentKey);
+            agentInventories.remove(agentKey);
             logDebug("Despawned agent " + agentId);
+            if (onSuccess != null) onSuccess.run();
+        });
+    }
+
+    public void handleAgentSlotAssignBlock(String agentId,
+                                           String ownerName,
+                                           String blockId,
+                                           int amount,
+                                           int slot,
+                                           Runnable onSuccess,
+                                           Consumer<String> onFailure) {
+        runSync(() -> {
+            if (slot < 1 || slot > 27) {
+                if (onFailure != null) onFailure.accept("slot must be 1-27");
+                return;
+            }
+            if (amount < 1 || amount > 64) {
+                if (onFailure != null) onFailure.accept("amount must be 1-64");
+                return;
+            }
+            var agentKey = agentMapKey(ownerName, agentId);
+            var entry = agents.get(agentKey);
+            if (entry == null) {
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            var stand = getAgentEntity(entry.entityId());
+            if (stand == null) {
+                agents.remove(agentKey);
+                agentInventories.remove(agentKey);
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            if (blockId == null || blockId.isBlank()) {
+                if (onFailure != null) onFailure.accept("block required");
+                return;
+            }
+            var material = Material.matchMaterial(blockId);
+            if (material == null || !material.isItem()) {
+                if (onFailure != null) onFailure.accept("invalid block");
+                return;
+            }
+            var inventory = agentInventories.computeIfAbsent(agentKey, k -> new AgentInventory());
+            inventory.slots[slot - 1] = new ItemStack(material, amount);
+            if (inventory.activeSlot == slot - 1) {
+                applyActiveSlotToStand(stand, inventory);
+            }
+            if (onSuccess != null) onSuccess.run();
+        });
+    }
+
+    public void handleAgentSlotActivate(String agentId,
+                                        String ownerName,
+                                        int slot,
+                                        Runnable onSuccess,
+                                        Consumer<String> onFailure) {
+        runSync(() -> {
+            if (slot < 1 || slot > 27) {
+                if (onFailure != null) onFailure.accept("slot must be 1-27");
+                return;
+            }
+            var agentKey = agentMapKey(ownerName, agentId);
+            var entry = agents.get(agentKey);
+            if (entry == null) {
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            var stand = getAgentEntity(entry.entityId());
+            if (stand == null) {
+                agents.remove(agentKey);
+                agentInventories.remove(agentKey);
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            var inventory = agentInventories.computeIfAbsent(agentKey, k -> new AgentInventory());
+            inventory.activeSlot = slot - 1;
+            applyActiveSlotToStand(stand, inventory);
+            if (onSuccess != null) onSuccess.run();
+        });
+    }
+
+    public void handleAgentPlace(String agentId,
+                                 String ownerName,
+                                 String direction,
+                                 Runnable onSuccess,
+                                 Consumer<String> onFailure) {
+        runSync(() -> {
+            var agentKey = agentMapKey(ownerName, agentId);
+            var entry = agents.get(agentKey);
+            if (entry == null) {
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            var stand = getAgentEntity(entry.entityId());
+            if (stand == null) {
+                agents.remove(agentKey);
+                agentInventories.remove(agentKey);
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            var inventory = agentInventories.get(agentKey);
+            if (inventory == null || inventory.activeSlot < 0 || inventory.activeSlot >= inventory.slots.length) {
+                if (onFailure != null) onFailure.accept("no active slot");
+                return;
+            }
+            var held = inventory.slots[inventory.activeSlot];
+            if (held == null || held.getType() == null || !held.getType().isBlock()) {
+                if (onFailure != null) onFailure.accept("active slot has no block");
+                return;
+            }
+            var targetOffset = resolvePlaceOffset(stand.getLocation(), direction);
+            if (targetOffset == null) {
+                if (onFailure != null) onFailure.accept("invalid direction");
+                return;
+            }
+            var targetLoc = stand.getLocation().clone().add(targetOffset);
+            var targetBlock = targetLoc.getBlock();
+            if (targetBlock == null) {
+                if (onFailure != null) onFailure.accept("invalid target");
+                return;
+            }
+            if (!targetBlock.isEmpty() && !targetBlock.getType().isAir()) {
+                if (onFailure != null) onFailure.accept("target not empty");
+                return;
+            }
+            targetBlock.setType(held.getType(), false);
+            var newAmount = held.getAmount() - 1;
+            inventory.slots[inventory.activeSlot] = newAmount > 0 ? new ItemStack(held.getType(), newAmount) : null;
+            applyActiveSlotToStand(stand, inventory);
             if (onSuccess != null) onSuccess.run();
         });
     }
@@ -320,6 +457,19 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return resolved.get();
     }
 
+    public List<BlockEntry> getAvailableBlocks() {
+        var cached = cachedBlockList;
+        if (cached != null) return cached;
+        synchronized (this) {
+            cached = cachedBlockList;
+            if (cached == null) {
+                cached = computeBlockList();
+                cachedBlockList = cached;
+            }
+        }
+        return cached;
+    }
+
     private void cleanupAgents() {
         if (agents.isEmpty()) return;
         runSync(() -> {
@@ -328,6 +478,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 if (entity != null) entity.remove();
             });
             agents.clear();
+            agentInventories.clear();
         });
     }
 
@@ -530,6 +681,16 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         };
     }
 
+    private Vector resolvePlaceOffset(Location origin, String direction) {
+        if (direction == null) return null;
+        var dir = direction.trim().toLowerCase(Locale.ROOT);
+        if (dir.equals("up")) return new Vector(0, 1, 0);
+        if (dir.equals("down")) return new Vector(0, -1, 0);
+        var horiz = resolveDirectionVector(origin, dir);
+        if (horiz == null) return null;
+        return horiz.normalize();
+    }
+
     private String normalizeDirection(String direction) {
         if (direction == null) return null;
         return switch (direction.trim().toLowerCase(Locale.ROOT)) {
@@ -551,6 +712,18 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if (normalized < -180f) normalized += 360f;
         if (normalized >= 180f) normalized -= 360f;
         return normalized;
+    }
+
+    private void applyActiveSlotToStand(ArmorStand stand, AgentInventory inventory) {
+        if (stand == null || inventory == null) return;
+        var equipment = stand.getEquipment();
+        if (equipment == null) return;
+        ItemStack item = null;
+        if (inventory.activeSlot >= 0 && inventory.activeSlot < inventory.slots.length) {
+            var stored = inventory.slots[inventory.activeSlot];
+            if (stored != null) item = stored.clone();
+        }
+        equipment.setItemInMainHand(item);
     }
 
     private static String agentMapKey(String ownerName, String agentId) {
@@ -592,5 +765,38 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return "ws://" + normalizedHost + ":" + port;
     }
 
+    private List<BlockEntry> computeBlockList() {
+        var list = new ArrayList<BlockEntry>();
+        for (var material : Material.values()) {
+            if (!material.isBlock()) continue;
+            if (!material.isItem()) continue;
+            if (material.isAir()) continue;
+            var key = material.getKey().getKey();
+            list.add(new BlockEntry(key, humanizeMaterialName(key)));
+        }
+        list.sort(java.util.Comparator.comparing(BlockEntry::name));
+        return Collections.unmodifiableList(list);
+    }
+
+    private static String humanizeMaterialName(String key) {
+        if (key == null || key.isBlank()) return "";
+        var parts = key.split("_");
+        var builder = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (parts[i].isBlank()) continue;
+            if (builder.length() > 0) builder.append(' ');
+            builder.append(Character.toUpperCase(parts[i].charAt(0)));
+            if (parts[i].length() > 1) builder.append(parts[i].substring(1));
+        }
+        return builder.toString();
+    }
+
     private record AgentEntry(UUID entityId, String owner) {}
+
+    private static class AgentInventory {
+        final ItemStack[] slots = new ItemStack[27];
+        int activeSlot = -1;
+    }
+
+    public record BlockEntry(String id, String name) {}
 }
