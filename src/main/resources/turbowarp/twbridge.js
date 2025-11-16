@@ -1,6 +1,15 @@
 (() => {
   const WS_DEFAULT = "ws://127.0.0.1:8787";
   const TWB_DEFAULT_LANG = "en";
+  const TWB_BLOCK_CHOICES = (() => {
+    try { return __TWB_BLOCK_CHOICES__; } catch (e) {
+      return [
+        ["stone","stone"],
+        ["dirt","dirt"],
+        ["cobblestone","cobblestone"]
+      ];
+    }
+  })();
 
   const TWB_LOCALES = {
     en: {
@@ -72,6 +81,16 @@
       this.sessionId = null;
       this.boundPlayer = null;
       this.blockChoices = [];
+      this.agentBlockChoicesMenu = () => {
+        if (this.blockChoices && this.blockChoices.length > 0) {
+          return this.blockChoices.map(({ id, name }) => [name, id]);
+        }
+        return [
+          ['stone', 'stone'],
+          ['dirt', 'dirt'],
+          ['cobblestone', 'cobblestone']
+        ];
+      };
       this.waiters = new Map();
       this.opening = false;
       this.connected = false;
@@ -366,7 +385,11 @@
             text: twbText('blockSlotSet'),
             arguments: {
               ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
-              BLOCK: { type: Scratch.ArgumentType.STRING, defaultValue: 'stone' },
+              BLOCK: {
+                type: Scratch.ArgumentType.STRING,
+                menu: 'agentBlockChoices',
+                defaultValue: 'stone'
+              },
               COUNT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 16 },
               SLOT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 }
             }
@@ -401,6 +424,15 @@
               { text: twbText('turnLeft'), value: 'left' },
               { text: twbText('turnRight'), value: 'right' }
             ]
+          },
+          agentBlockChoices: {
+            acceptReporters: false,
+            items: TWB_BLOCK_CHOICES.map(entry => {
+              if (Array.isArray(entry) && entry.length >= 2) {
+                return { text: String(entry[0]), value: String(entry[1]) };
+              }
+              return null;
+            }).filter(Boolean)
           },
           agentPlaceDirections: {
             acceptReporters: false,

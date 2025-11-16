@@ -1,7 +1,7 @@
 package net.nando256.twbridge.http;
 
 import com.sun.net.httpserver.*;
-import org.bukkit.plugin.java.JavaPlugin;
+import net.nando256.twbridge.TwBridgePlugin;
 
 import java.io.*;
 import java.net.InetSocketAddress;
@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 public final class TwHttpServer {
-    private final JavaPlugin plugin;
+    private final TwBridgePlugin plugin;
     private final String address; private final int port;
     private final String path;    private final List<String> corsAllowOrigins;
     private final int cacheSeconds;
@@ -27,9 +27,10 @@ public final class TwHttpServer {
     private final ConcurrentHashMap<String, JsVariant> variantCache = new ConcurrentHashMap<>();
     private static final Pattern WS_DEFAULT_PATTERN = Pattern.compile("const WS_DEFAULT = \"[^\"]+\";");
     private static final Pattern LANG_CONST_PATTERN = Pattern.compile("const TWB_DEFAULT_LANG = \"[^\"]*\";");
+    private static final String BLOCK_LIST_PLACEHOLDER = "__TWB_BLOCK_CHOICES__";
     private static final Pattern LANG_SANITIZE_PATTERN = Pattern.compile("^[a-z0-9]{2,8}(?:-[a-z0-9]{1,8})*$");
 
-    public TwHttpServer(JavaPlugin plugin, String address, int port, String path,
+    public TwHttpServer(TwBridgePlugin plugin, String address, int port, String path,
                         List<String> corsAllowOrigins, int cacheSeconds,
                         String wsDefault) {
         this.plugin = plugin;
@@ -41,9 +42,10 @@ public final class TwHttpServer {
     }
 
     public void start() throws IOException {
+        var blockListJson = buildBlockListJson();
         try (InputStream is = plugin.getResource("turbowarp/twbridge.js")) {
             if (is == null) throw new IOException("resource turbowarp/twbridge.js not found");
-            jsTemplate = loadTemplate(is);
+            jsTemplate = loadTemplate(is, blockListJson);
         }
         variantCache.clear();
         server = HttpServer.create(new InetSocketAddress(address, port), 0);
@@ -98,13 +100,19 @@ public final class TwHttpServer {
         catch(Exception e){ return "\""+d.length+"\""; }
     }
 
-    private String loadTemplate(InputStream is) throws IOException {
+    private String loadTemplate(InputStream is, String blockListJson) throws IOException {
         var raw = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        if (wsDefault == null || wsDefault.isBlank()) return raw;
-        var matcher = WS_DEFAULT_PATTERN.matcher(raw);
-        if (!matcher.find()) return raw;
-        var safe = escapeForJs(wsDefault);
-        return matcher.replaceFirst("const WS_DEFAULT = \"" + safe + "\";");
+        if (wsDefault != null && !wsDefault.isBlank()) {
+            var matcher = WS_DEFAULT_PATTERN.matcher(raw);
+            if (matcher.find()) {
+                var safe = escapeForJs(wsDefault);
+                raw = matcher.replaceFirst("const WS_DEFAULT = \"" + safe + "\";");
+            }
+        }
+        if (blockListJson != null) {
+            raw = raw.replace(BLOCK_LIST_PLACEHOLDER, blockListJson);
+        }
+        return raw;
     }
 
     private JsVariant buildVariant(String requestedLang) {
@@ -155,4 +163,21 @@ public final class TwHttpServer {
     }
 
     private record JsVariant(byte[] bytes, String etag) {}
+
+    private String buildBlockListJson() {
+        var builder = new StringBuilder();
+        builder.append("[");
+        var blocks = plugin.getAvailableBlocks();
+        for (int i = 0; i < blocks.size(); i++) {
+            var b = blocks.get(i);
+            if (i > 0) builder.append(",");
+            builder.append("[\"")
+                .append(escapeForJs(b.name()))
+                .append("\",\"")
+                .append(escapeForJs(b.id()))
+                .append("\"]");
+        }
+        builder.append("]");
+        return builder.toString();
+    }
 }
