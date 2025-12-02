@@ -656,6 +656,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private Vector resolveDirectionVector(Location origin, String direction) {
         if (origin == null) return null;
+        if (direction == null) return null;
+        var dirTrim = direction.trim().toLowerCase(Locale.ROOT);
+        if (dirTrim.equals("up")) return new Vector(0, 1, 0);
+        if (dirTrim.equals("down")) return new Vector(0, -1, 0);
         var forward = origin.getDirection();
         if (forward == null || forward.lengthSquared() < 1.0E-4) {
             forward = new Vector(0, 0, 1);
@@ -672,7 +676,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         } else {
             right.normalize();
         }
-        return switch (direction) {
+        return switch (dirTrim) {
             case "forward" -> forward;
             case "back" -> forward.clone().multiply(-1);
             case "right" -> right;
@@ -694,7 +698,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String normalizeDirection(String direction) {
         if (direction == null) return null;
         return switch (direction.trim().toLowerCase(Locale.ROOT)) {
-            case "forward", "back", "right", "left" -> direction.trim().toLowerCase(Locale.ROOT);
+            case "forward", "back", "right", "left", "up", "down" -> direction.trim().toLowerCase(Locale.ROOT);
             default -> null;
         };
     }

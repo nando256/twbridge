@@ -190,17 +190,23 @@ public class BridgeServer extends WebSocketServer {
                     err(conn, id, "blocks must be a number");
                     return;
                 }
+                var normDir = direction.toLowerCase(Locale.ROOT);
+                if (!normDir.equals("forward") && !normDir.equals("back") && !normDir.equals("right")
+                    && !normDir.equals("left") && !normDir.equals("up") && !normDir.equals("down")) {
+                    err(conn, id, "invalid direction");
+                    return;
+                }
                 var session = sessions.get(conn);
                 var owner = session == null ? null : session.player();
                 if (owner == null || owner.isBlank()) {
                     err(conn, id, "player not bound");
                     return;
                 }
-                plugin.logDebug("agent.move id=" + agentId + " player=" + owner + " dir=" + direction + " blocks=" + blocks);
+                plugin.logDebug("agent.move id=" + agentId + " player=" + owner + " dir=" + normDir + " blocks=" + blocks);
                 plugin.handleAgentMove(
                     agentId,
                     owner,
-                    direction,
+                    normDir,
                     blocks,
                     () -> ok(conn, id, null),
                     (msg) -> err(conn, id, msg == null ? "move failed" : msg)
