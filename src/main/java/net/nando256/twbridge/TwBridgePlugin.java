@@ -191,6 +191,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 logDebug("Teleporting existing agent " + agentId);
                 stand.teleport(target);
             }
+            resetHeadPose(stand);
             applyActiveSlotToStand(stand, inventory);
             if (onSuccess != null) onSuccess.run();
         });
@@ -243,6 +244,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             }
             animateAgentMove(stand);
             stand.teleport(target);
+            resetHeadPose(stand);
             if (onSuccess != null) onSuccess.run();
         });
     }
@@ -278,6 +280,75 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             var loc = stand.getLocation();
             float newYaw = normalizeYaw(loc.getYaw() + delta);
             stand.teleport(new Location(loc.getWorld(), loc.getX(), loc.getY(), loc.getZ(), newYaw, loc.getPitch()));
+            resetHeadPose(stand);
+            if (onSuccess != null) onSuccess.run();
+        });
+    }
+
+    public void handleAgentFacePlayer(String agentId,
+                                      String ownerName,
+                                      String targetPlayerName,
+                                      Runnable onSuccess,
+                                      Consumer<String> onFailure) {
+        runSync(() -> {
+            var agentKey = agentMapKey(ownerName, agentId);
+            var entry = agents.get(agentKey);
+            if (entry == null) {
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            if (!entry.owner().equalsIgnoreCase(ownerName)) {
+                if (onFailure != null) onFailure.accept("agent owned by another player");
+                return;
+            }
+            var stand = getAgentEntity(entry.entityId());
+            if (stand == null) {
+                agents.remove(agentKey);
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            var targetName = targetPlayerName == null ? "" : targetPlayerName.trim();
+            if (targetName.isEmpty()) {
+                if (onFailure != null) onFailure.accept("target player required");
+                return;
+            }
+            var targetPlayer = resolvePlayer(targetName);
+            if (targetPlayer == null) {
+                if (onFailure != null) onFailure.accept("target player not found");
+                return;
+            }
+            var standLoc = stand.getLocation();
+            var targetLoc = targetPlayer.getLocation();
+            var standWorld = standLoc.getWorld();
+            var targetWorld = targetLoc.getWorld();
+            if (standWorld == null || targetWorld == null || !standWorld.equals(targetWorld)) {
+                if (onFailure != null) onFailure.accept("player not in same world");
+                return;
+            }
+            var standEyeY = standLoc.getY() + stand.getEyeHeight();
+            var targetEyeY = targetLoc.getY() + targetPlayer.getEyeHeight();
+            double dx = targetLoc.getX() - standLoc.getX();
+            double dz = targetLoc.getZ() - standLoc.getZ();
+            double dy = targetEyeY - standEyeY;
+            double horiz = Math.sqrt(dx * dx + dz * dz);
+            float yaw = horiz < 1.0E-4
+                ? standLoc.getYaw()
+                : normalizeYaw((float) Math.toDegrees(Math.atan2(-dx, dz)));
+            float pitch;
+            if (horiz < 1.0E-4) {
+                if (Math.abs(dy) < 1.0E-4) {
+                    pitch = standLoc.getPitch();
+                } else {
+                    pitch = dy > 0 ? -90f : 90f;
+                }
+            } else {
+                pitch = (float) Math.toDegrees(-Math.atan2(dy, horiz));
+            }
+            if (pitch < -90f) pitch = -90f;
+            if (pitch > 90f) pitch = 90f;
+            stand.teleport(new Location(standWorld, standLoc.getX(), standLoc.getY(), standLoc.getZ(), yaw, pitch));
+            var slightTilt = new EulerAngle(Math.toRadians(-10), 0, 0);
+            stand.setHeadPose(slightTilt);
             if (onSuccess != null) onSuccess.run();
         });
     }
@@ -639,6 +710,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 stand.setRightLegPose(zero);
             }
         }.runTaskTimer(this, 0L, 2L);
+    }
+
+    private void resetHeadPose(ArmorStand stand) {
+        if (stand == null) return;
+        stand.setHeadPose(new EulerAngle(0, 0, 0));
     }
 
     private Location normalizeAgentTarget(Location raw, Location reference) {

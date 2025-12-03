@@ -238,6 +238,34 @@ public class BridgeServer extends WebSocketServer {
                 return;
             }
 
+            if ("agent.facePlayer".equals(cmd)) {
+                var agentId = json.optString("agentId", "").trim();
+                var targetPlayer = json.optString("targetPlayer", "").trim();
+                if (agentId.isEmpty()) {
+                    err(conn, id, "agentId required");
+                    return;
+                }
+                if (targetPlayer.isEmpty()) {
+                    err(conn, id, "target player required");
+                    return;
+                }
+                var session = sessions.get(conn);
+                var owner = session == null ? null : session.player();
+                if (owner == null || owner.isBlank()) {
+                    err(conn, id, "player not bound");
+                    return;
+                }
+                plugin.logDebug("agent.facePlayer id=" + agentId + " player=" + owner + " target=" + targetPlayer);
+                plugin.handleAgentFacePlayer(
+                    agentId,
+                    owner,
+                    targetPlayer,
+                    () -> ok(conn, id, null),
+                    (msg) -> err(conn, id, msg == null ? "face failed" : msg)
+                );
+                return;
+            }
+
             if ("agent.slotActivate".equals(cmd)) {
                 var agentId = json.optString("agentId", "").trim();
                 int slot = json.optInt("slot", -1);

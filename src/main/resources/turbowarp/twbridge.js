@@ -23,6 +23,7 @@
       blockDespawn: 'despawn agent [ID]',
       blockMove: 'move agent [ID] [DIRECTION] [BLOCKS] blocks',
       blockRotate: 'turn agent [ID] [TURN]',
+      blockFacePlayer: 'turn agent [ID] toward player [PLAYER]',
       blockSlotActivate: 'activate agent [ID] slot [SLOT]',
       blockSlotSet: 'set agent [ID] slot [SLOT] to [BLOCK] x [COUNT]',
       blockPlace: 'place from agent [ID] toward [DIR]',
@@ -46,6 +47,7 @@
       blockDespawn: 'エージェント [ID] を消す',
       blockMove: 'エージェント [ID] を [DIRECTION] に [BLOCKS] ブロック移動',
       blockRotate: 'エージェント [ID] の向きを [TURN] に変える',
+      blockFacePlayer: 'プレイヤー [PLAYER] の方向にエージェント [ID] の向きを変える',
       blockSlotActivate: 'エージェント [ID] のスロット [SLOT] を有効にする',
       blockSlotSet: 'エージェント [ID] のスロット [SLOT] に [BLOCK] を [COUNT] 個セット',
       blockPlace: 'エージェント [ID] に [DIR] へ置かせる',
@@ -246,6 +248,17 @@
       return this._send({ cmd: 'agent.rotate', agentId: id, direction: turnDir });
     }
 
+    async faceAgentToPlayer(agentId, targetPlayer) {
+      if (!this.sessionId) throw new Error('not connected');
+      if (!this.boundPlayer) throw new Error('player not bound');
+      const id = String(agentId || '').trim();
+      const player = String(targetPlayer || '').trim();
+      if (!id) throw new Error('agent id required');
+      if (!player) throw new Error('target player required');
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
+      return this._send({ cmd: 'agent.facePlayer', agentId: id, targetPlayer: player });
+    }
+
     async activateAgentSlot(agentId, slot) {
       if (!this.sessionId) throw new Error('not connected');
       if (!this.boundPlayer) throw new Error('player not bound');
@@ -371,6 +384,15 @@
             }
           },
           {
+            opcode: 'faceAgentToPlayer',
+            blockType: Scratch.BlockType.COMMAND,
+            text: twbText('blockFacePlayer'),
+            arguments: {
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
+              PLAYER: { type: Scratch.ArgumentType.STRING, defaultValue: 'Steve' }
+            }
+          },
+          {
             opcode: 'activateAgentSlot',
             blockType: Scratch.BlockType.COMMAND,
             text: twbText('blockSlotActivate'),
@@ -482,6 +504,12 @@
       await bridge.rotateAgent(
         String(args.ID || ""),
         args.TURN || "left"
+      );
+    }
+    async faceAgentToPlayer(args) {
+      await bridge.faceAgentToPlayer(
+        String(args.ID || ""),
+        String(args.PLAYER || "")
       );
     }
     async activateAgentSlot(args) {
