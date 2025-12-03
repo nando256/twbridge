@@ -191,7 +191,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 logDebug("Teleporting existing agent " + agentId);
                 stand.teleport(target);
             }
-            resetHeadPose(stand);
+            resetFacingForward(stand);
             applyActiveSlotToStand(stand, inventory);
             if (onSuccess != null) onSuccess.run();
         });
@@ -244,7 +244,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             }
             animateAgentMove(stand);
             stand.teleport(target);
-            resetHeadPose(stand);
+            resetFacingForward(stand);
             if (onSuccess != null) onSuccess.run();
         });
     }
@@ -280,7 +280,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             var loc = stand.getLocation();
             float newYaw = normalizeYaw(loc.getYaw() + delta);
             stand.teleport(new Location(loc.getWorld(), loc.getX(), loc.getY(), loc.getZ(), newYaw, loc.getPitch()));
-            resetHeadPose(stand);
+            resetFacingForward(stand);
             if (onSuccess != null) onSuccess.run();
         });
     }
@@ -712,8 +712,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         }.runTaskTimer(this, 0L, 2L);
     }
 
-    private void resetHeadPose(ArmorStand stand) {
+    private void resetFacingForward(ArmorStand stand) {
         if (stand == null) return;
+        var loc = stand.getLocation();
+        if (loc == null || loc.getWorld() == null) return;
+        stand.teleport(new Location(loc.getWorld(), loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), 0f));
         stand.setHeadPose(new EulerAngle(0, 0, 0));
     }
 
