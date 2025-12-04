@@ -81,7 +81,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         allowLegacyPairing = getConfig().getBoolean("ws.allowLegacyPairing", false);
         magicTokenTtlSeconds = Math.max(30, getConfig().getInt("magicLink.tokenTtlSeconds", 300));
         magicLinkBaseUrl = firstNonBlank(getConfig().getString("magicLink.baseUrl"), "https://turbowarp.org/editor");
-        magicLinkExtensionTemplate = firstNonBlank(getConfig().getString("magicLink.extensionTemplate"), "https://cdn.jsdelivr.net/gh/nando256/twbridge@main/twbridge-:lang.js");
+        magicLinkExtensionTemplate = firstNonBlank(
+            getConfig().getString("magicLink.extensionTemplate"),
+            "https://cdn.jsdelivr.net/gh/nando256/twbridge@:branch/src/main/resources/turbowarp/twbridge-:lang.js"
+        );
         defaultLang = sanitizeLang(getConfig().getString("magicLink.defaultLang"), "en");
         defaultBranch = sanitizeBranch(getConfig().getString("magicLink.defaultBranch"), "main");
         magicTokens.clear();
