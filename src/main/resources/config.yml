@@ -5,10 +5,17 @@ ws:
   requireSession: true
   allowLegacyPairing: false
   advertiseAddress: "127.0.0.1"
+  advertisePort: 8787
+  advertiseScheme: "ws"
   maxMsgPerSecond: 30
   maxMsgBytes: 8192
   originWhitelist:
     - "*"
+http:
+  enabled: true
+  bindAddress: "0.0.0.0"
+  port: 8788
+  cacheSeconds: 300
 pairing:
   enabled: true
   windowSeconds: 60

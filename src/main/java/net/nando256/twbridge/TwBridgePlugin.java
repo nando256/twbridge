@@ -1,5 +1,6 @@
 package net.nando256.twbridge;
 
+import net.nando256.twbridge.http.StaticHttpServer;
 import net.nando256.twbridge.ws.BridgeServer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -42,6 +43,7 @@ import java.util.function.Consumer;
 
 public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private BridgeServer wsServer;
+    private StaticHttpServer httpServer;
     private final Map<String, AgentEntry> agents = new ConcurrentHashMap<>();
     private final Map<String, AgentInventory> agentInventories = new ConcurrentHashMap<>();
     private final Map<String, MagicToken> magicTokens = new ConcurrentHashMap<>();
@@ -57,6 +59,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String advertiseHost;
     private String wsBindAddress;
     private int wsPort;
+    private int advertisePort;
+    private String advertiseScheme;
     private String defaultLang;
     private String defaultBranch;
     private volatile List<BlockEntry> cachedBlockList;
@@ -96,6 +100,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         );
         wsBindAddress = wsAddr;
         wsPort = getConfig().getInt("ws.port", 8787);
+        advertisePort = getConfig().getInt("ws.advertisePort", wsPort);
+        advertiseScheme = sanitizeScheme(getConfig().getString("ws.advertiseScheme"));
         int rate = getConfig().getInt("ws.maxMsgPerSecond", 30);
         int maxBytes = getConfig().getInt("ws.maxMsgBytes", 8192);
         var origins = new java.util.HashSet<>(getConfig().getStringList("ws.originWhitelist"));
@@ -105,7 +111,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         );
         int pairWindowSec = getConfig().getInt("pairing.windowSeconds", 60);
         advertiseHost = firstNonBlank(getConfig().getString("ws.advertiseAddress"));
-        advertisedWsUrl = buildWsDefaultUrl(resolveAdvertisedHost(null), wsPort);
+        advertisedWsUrl = buildWsDefaultUrl(resolveAdvertisedHost(null), advertisePort, advertiseScheme);
 
         try {
             wsServer = new BridgeServer(this, wsAddr, wsPort, origins, rate, maxBytes, pairingRequired, pairWindowSec, requireSession, allowLegacyPairing);
@@ -118,9 +124,23 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             return;
         }
 
+        if (getConfig().getBoolean("http.enabled", true)) {
+            String httpAddr = firstNonBlank(getConfig().getString("http.bindAddress"), "0.0.0.0");
+            int httpPort = getConfig().getInt("http.port", 8788);
+            int cacheSeconds = Math.max(0, getConfig().getInt("http.cacheSeconds", 300));
+            try {
+                httpServer = new StaticHttpServer(this, httpAddr, httpPort, "turbowarp/", cacheSeconds);
+                httpServer.start();
+                getLogger().info("HTTP: http://" + httpAddr + ":" + httpPort + "/");
+            } catch (Exception e) {
+                getLogger().severe("HTTP Server Failed: " + e.getMessage());
+            }
+        }
+
     }
 
     private void stopServers() {
+        if (httpServer != null) { httpServer.stop(); httpServer = null; }
         if (wsServer != null) { try { wsServer.stop(1000); } catch (Exception ignored) {} wsServer = null; }
         cleanupAgents();
         magicTokens.clear();
@@ -205,7 +225,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var branch = sanitizeBranch(branchOverride, defaultBranch);
         var extensionUrl = resolveExtensionUrl(lang, branch);
         var hostForPlayer = resolveAdvertisedHost(player);
-        var wsUrl = buildWsDefaultUrl(hostForPlayer, wsPort);
+        var wsUrl = buildWsDefaultUrl(hostForPlayer, advertisePort, advertiseScheme);
         var base = magicLinkBaseUrl == null || magicLinkBaseUrl.isBlank() ? "https://turbowarp.org/editor" : magicLinkBaseUrl.trim();
         var extWithQuery = extensionUrl
             + (extensionUrl.contains("?") ? "&" : "?")
@@ -305,6 +325,13 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if (normalized.isBlank() || normalized.length() > 48) return fb;
         if (!normalized.matches("[A-Za-z0-9._-]{1,48}")) return fb;
         return normalized;
+    }
+
+    private static String sanitizeScheme(String raw) {
+        if (raw == null || raw.isBlank()) return "ws";
+        var lower = raw.trim().toLowerCase(Locale.ROOT);
+        if (lower.equals("wss")) return "wss";
+        return "ws";
     }
 
     private static String encodeComponent(String value) {
@@ -1044,12 +1071,16 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             || normalized.equals("[::1]");
     }
 
-    private static String buildWsDefaultUrl(String host, int port) {
+    private static String buildWsDefaultUrl(String host, int port, String scheme) {
         var effectiveHost = (host == null || host.isBlank()) ? "127.0.0.1" : host;
         var bracketed = effectiveHost.startsWith("[") && effectiveHost.endsWith("]");
         var needsBrackets = effectiveHost.contains(":") && !bracketed;
         var normalizedHost = needsBrackets ? "[" + effectiveHost + "]" : effectiveHost;
-        return "ws://" + normalizedHost + ":" + port;
+        var effectiveScheme = (scheme == null || scheme.isBlank()) ? "ws" : scheme.trim().toLowerCase(Locale.ROOT);
+        if (!effectiveScheme.equals("wss") && !effectiveScheme.equals("ws")) {
+            effectiveScheme = "ws";
+        }
+        return effectiveScheme + "://" + normalizedHost + ":" + port;
     }
 
     private List<BlockEntry> computeBlockList() {
