@@ -9,6 +9,12 @@ commands:
     description: Control twbridge
     permission: twbridge.admin
     usage: /twbridge <reload|pair>
+  tw:
+    description: Get TurboWarp magic link
+    permission: twbridge.link
+    usage: /tw [branch]
 permissions:
   twbridge.admin:
     default: op
+  twbridge.link:
+    default: true

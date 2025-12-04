@@ -26,6 +26,8 @@ public class BridgeServer extends WebSocketServer {
 
     private final boolean pairingRequired;
     private final int pairWindowSeconds;
+    private final boolean requireSession;
+    private final boolean allowLegacyPairing;
     private final int maxMsgPerSec;
     private final int maxMsgBytes;
     private final java.util.Set<String> allowedOrigins;
@@ -37,7 +39,8 @@ public class BridgeServer extends WebSocketServer {
                         String host, int port,
                         java.util.Set<String> allowedOrigins,
                         int maxMsgPerSec, int maxMsgBytes,
-                        boolean pairingRequired, int pairWindowSeconds) {
+                        boolean pairingRequired, int pairWindowSeconds,
+                        boolean requireSession, boolean allowLegacyPairing) {
         super(new InetSocketAddress(host, port));
         this.plugin = plugin;
         this.allowedOrigins = allowedOrigins;
@@ -45,6 +48,8 @@ public class BridgeServer extends WebSocketServer {
         this.maxMsgBytes = maxMsgBytes;
         this.pairingRequired = pairingRequired;
         this.pairWindowSeconds = pairWindowSeconds;
+        this.requireSession = requireSession;
+        this.allowLegacyPairing = allowLegacyPairing;
 
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override public void run() {
@@ -52,11 +57,11 @@ public class BridgeServer extends WebSocketServer {
             }
         }, 1000, 1000);
 
-        if (pairingRequired) rotatePairCode();
+        if (pairingRequired && allowLegacyPairing) rotatePairCode();
     }
 
     public String rotatePairCode() {
-        if (!pairingRequired) return null;
+        if (!pairingRequired || !allowLegacyPairing) return null;
         this.activePairCode = String.format("%06d", rng.nextInt(1_000_000));
         this.pairExpireAt = System.currentTimeMillis() + pairWindowSeconds * 1000L;
         plugin.getLogger().info("[twbridge] Pairing code: " + activePairCode + " (valid " + pairWindowSeconds + "s)");
@@ -77,7 +82,11 @@ public class BridgeServer extends WebSocketServer {
         plugin.getLogger().info("[twbridge] WS connected: " + conn.getRemoteSocketAddress());
         plugin.logDebug("Connection opened: " + conn.getRemoteSocketAddress());
         counters.put(conn, 0);
-        sendJson(conn, new JSONObject().put("hello", "twbridge").put("pairing", pairingRequired));
+        sendJson(conn, new JSONObject()
+            .put("hello", "twbridge")
+            .put("pairing", pairingRequired && allowLegacyPairing)
+            .put("requireSession", requireSession)
+        );
     }
 
     @Override
@@ -91,7 +100,41 @@ public class BridgeServer extends WebSocketServer {
             var id = UUID.fromString(json.optString("id", UUID.randomUUID().toString()));
             var cmd = json.optString("cmd", "");
 
+            if ("token.start".equals(cmd)) {
+                if (sessions.containsKey(conn)) {
+                    err(conn, id, "session already established");
+                    return;
+                }
+                var token = json.optString("token", "").trim();
+                if (token.isEmpty()) {
+                    err(conn, id, "token required");
+                    conn.close(1008, "token required");
+                    return;
+                }
+                var player = plugin.consumeMagicToken(token);
+                if (player == null || player.isBlank()) {
+                    err(conn, id, "invalid or expired token");
+                    conn.close(1008, "invalid or expired token");
+                    return;
+                }
+                var sessId = UUID.randomUUID().toString();
+                if (!bindPlayer(player, conn)) {
+                    err(conn, id, "player already bound");
+                    conn.close(1008, "player already bound");
+                    return;
+                }
+                sessions.put(conn, new Session(sessId, System.currentTimeMillis(), player));
+                plugin.logDebug("Session established via token for " + conn.getRemoteSocketAddress() + " player=" + player);
+                ok(conn, id, new JSONObject().put("sessionId", sessId).put("player", player));
+                return;
+            }
+
             if ("pair.start".equals(cmd)) {
+                if (!allowLegacyPairing) {
+                    err(conn, id, "pair.start disabled");
+                    conn.close(1008, "pairing disabled");
+                    return;
+                }
                 if (sessions.containsKey(conn)) {
                     err(conn, id, "session already established");
                     return;
@@ -140,9 +183,9 @@ public class BridgeServer extends WebSocketServer {
                 return;
             }
 
-            if (pairingRequired && !requireActiveSession(conn, json)) {
-                err(conn, id, "not paired");
-                conn.close(1008, "pairing required");
+            if (requireSession && !requireActiveSession(conn, json)) {
+                err(conn, id, "not authenticated");
+                conn.close(1008, "session required");
                 return;
             }
 
@@ -396,7 +439,7 @@ public class BridgeServer extends WebSocketServer {
     }
 
     private boolean requireActiveSession(WebSocket conn, JSONObject json) {
-        if (!pairingRequired) return true;
+        if (!requireSession) return true;
         var session = sessions.get(conn);
         return session != null && json.optString("sessionId", "").equals(session.sessionId());
     }

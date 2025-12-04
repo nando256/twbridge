@@ -1,6 +1,5 @@
 package net.nando256.twbridge;
 
-import net.nando256.twbridge.http.TwHttpServer;
 import net.nando256.twbridge.ws.BridgeServer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -25,7 +24,11 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -39,10 +42,20 @@ import java.util.function.Consumer;
 
 public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private BridgeServer wsServer;
-    private TwHttpServer httpServer;
     private final Map<String, AgentEntry> agents = new ConcurrentHashMap<>();
     private final Map<String, AgentInventory> agentInventories = new ConcurrentHashMap<>();
+    private final Map<String, MagicToken> magicTokens = new ConcurrentHashMap<>();
+    private final SecureRandom tokenRng = new SecureRandom();
     private boolean debug;
+    private boolean magicLinkEnabled;
+    private boolean requireSession;
+    private boolean allowLegacyPairing;
+    private int magicTokenTtlSeconds;
+    private String magicLinkBaseUrl;
+    private String magicLinkExtensionTemplate;
+    private String advertisedWsUrl;
+    private String defaultLang;
+    private String defaultBranch;
     private volatile List<BlockEntry> cachedBlockList;
 
     @Override
@@ -60,6 +73,16 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         debug = getConfig().getBoolean("debug", false);
         logDebug("Debug mode enabled");
 
+        magicLinkEnabled = getConfig().getBoolean("magicLink.enabled", true);
+        requireSession = getConfig().getBoolean("ws.requireSession", true);
+        allowLegacyPairing = getConfig().getBoolean("ws.allowLegacyPairing", false);
+        magicTokenTtlSeconds = Math.max(30, getConfig().getInt("magicLink.tokenTtlSeconds", 300));
+        magicLinkBaseUrl = firstNonBlank(getConfig().getString("magicLink.baseUrl"), "https://turbowarp.org/editor");
+        magicLinkExtensionTemplate = firstNonBlank(getConfig().getString("magicLink.extensionTemplate"), "https://cdn.jsdelivr.net/gh/nando256/twbridge@main/twbridge-:lang.js");
+        defaultLang = sanitizeLang(getConfig().getString("magicLink.defaultLang"), "en");
+        defaultBranch = sanitizeBranch(getConfig().getString("magicLink.defaultBranch"), "main");
+        magicTokens.clear();
+
         String wsAddr = firstNonBlank(
             getConfig().getString("ws.bindAddress"),
             getConfig().getString("ws.address"),
@@ -75,14 +98,15 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         );
         int pairWindowSec = getConfig().getInt("pairing.windowSeconds", 60);
         var clientHost = chooseClientHost(
-            getConfig().getString("http.wsAddress"),
+            getServer() == null ? null : getServer().getIp(),
             getConfig().getString("ws.advertiseAddress"),
             wsAddr
         );
         String wsDefaultUrl = buildWsDefaultUrl(clientHost, wsPort);
+        advertisedWsUrl = wsDefaultUrl;
 
         try {
-            wsServer = new BridgeServer(this, wsAddr, wsPort, origins, rate, maxBytes, pairingRequired, pairWindowSec);
+            wsServer = new BridgeServer(this, wsAddr, wsPort, origins, rate, maxBytes, pairingRequired, pairWindowSec, requireSession, allowLegacyPairing);
             wsServer.setReuseAddr(true);
             wsServer.start();
             getLogger().info("WS: ws://" + wsAddr + ":" + wsPort);
@@ -92,39 +116,28 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        if (getConfig().getBoolean("http.enabled", true)) {
-            String hAddr = firstNonBlank(
-                getConfig().getString("http.bindAddress"),
-                getConfig().getString("http.address"),
-                "0.0.0.0"
-            );
-            int hPort = getConfig().getInt("http.port", 8788);
-            String hPath = getConfig().getString("http.path", "/tw/twbridge.js");
-            var cors = getConfig().getStringList("http.corsAllowOrigins");
-            int cache = getConfig().getInt("http.cacheSeconds", 60);
-            try {
-                httpServer = new TwHttpServer(this, hAddr, hPort, hPath, cors, cache, wsDefaultUrl);
-                httpServer.start();
-                getLogger().info("HTTP: http://" + hAddr + ":" + hPort + hPath);
-            } catch (Exception e) {
-                getLogger().severe("HTTP Server Failed: " + e.getMessage());
-            }
-        }
     }
 
     private void stopServers() {
-        if (httpServer != null) { httpServer.stop(); httpServer = null; }
         if (wsServer != null) { try { wsServer.stop(1000); } catch (Exception ignored) {} wsServer = null; }
         cleanupAgents();
+        magicTokens.clear();
     }
 
     @Override
     public boolean onCommand(CommandSender s, Command c, String l, String[] a) {
+        var cmdName = c.getName().toLowerCase(Locale.ROOT);
+        if ("tw".equals(cmdName)) {
+            return handleMagicLinkCommand(s, a);
+        }
+
+        if (!"twbridge".equals(cmdName)) return false;
         if (!s.hasPermission("twbridge.admin")) { s.sendMessage("No permission"); return true; }
         if (a.length == 0) { s.sendMessage("/twbridge reload | pair"); return true; }
         switch (a[0].toLowerCase(Locale.ROOT)) {
             case "reload" -> { reloadConfig(); applyConfigAndStart(); s.sendMessage("twbridge reloaded."); }
             case "pair" -> {
+                if (!allowLegacyPairing) { s.sendMessage("Pairing is disabled (ws.allowLegacyPairing = false)."); break; }
                 if (wsServer == null) { s.sendMessage("WS server not running."); break; }
                 var code = wsServer.rotatePairCode();
                 if (code == null) {
@@ -135,6 +148,29 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 }
             }
         }
+        return true;
+    }
+
+    private boolean handleMagicLinkCommand(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("Player only command");
+            return true;
+        }
+        if (!sender.hasPermission("twbridge.link")) {
+            sender.sendMessage("No permission");
+            return true;
+        }
+        if (!magicLinkEnabled) {
+            sender.sendMessage("Magic link is disabled in config");
+            return true;
+        }
+        var branchOverride = args != null && args.length > 0 ? args[0] : null;
+        var link = buildMagicLink(player, branchOverride);
+        if (link == null || link.isBlank()) {
+            sender.sendMessage("Failed to create link");
+            return true;
+        }
+        player.sendMessage(ChatColor.AQUA + "[twbridge] TurboWarp link: " + ChatColor.UNDERLINE + link);
         return true;
     }
 
@@ -158,6 +194,104 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 if (onFailure != null) onFailure.accept(e.getMessage());
             }
         });
+    }
+
+    private String buildMagicLink(Player player, String branchOverride) {
+        var token = issueMagicToken(player == null ? null : player.getName());
+        if (token == null) return null;
+        var lang = chooseMagicLang(player);
+        var branch = sanitizeBranch(branchOverride, defaultBranch);
+        var extensionUrl = resolveExtensionUrl(lang, branch);
+        var wsUrl = advertisedWsUrl == null ? "ws://127.0.0.1:8787" : advertisedWsUrl;
+        var base = magicLinkBaseUrl == null || magicLinkBaseUrl.isBlank() ? "https://turbowarp.org/editor" : magicLinkBaseUrl.trim();
+        var extWithQuery = extensionUrl
+            + (extensionUrl.contains("?") ? "&" : "?")
+            + "host=" + encodeComponent(wsUrl)
+            + "&token=" + encodeComponent(token)
+            + "&lang=" + encodeComponent(lang);
+        var encodedExt = encodeComponent(extWithQuery);
+        if (encodedExt == null) return null;
+        var builder = new StringBuilder(base);
+        builder.append(base.contains("?") ? "&" : "?").append("extension=").append(encodedExt);
+        return builder.toString();
+    }
+
+    private String resolveExtensionUrl(String lang, String branch) {
+        var template = magicLinkExtensionTemplate == null ? "" : magicLinkExtensionTemplate;
+        var resolved = template;
+        if (branch != null) {
+            if (resolved.contains(":branch")) {
+                resolved = resolved.replace(":branch", branch);
+            } else if (defaultBranch != null && !defaultBranch.isBlank()) {
+                resolved = resolved.replace("@" + defaultBranch, "@" + branch);
+            }
+        }
+        if (lang != null) {
+            resolved = resolved.replace(":lang", lang);
+        }
+        return resolved;
+    }
+
+    private String issueMagicToken(String playerName) {
+        if (playerName == null || playerName.isBlank()) return null;
+        purgeExpiredTokens();
+        byte[] buf = new byte[24];
+        tokenRng.nextBytes(buf);
+        var token = Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
+        long expires = System.currentTimeMillis() + (long) magicTokenTtlSeconds * 1000L;
+        magicTokens.put(token, new MagicToken(playerName, expires));
+        return token;
+    }
+
+    public String consumeMagicToken(String token) {
+        if (token == null || token.isBlank()) return null;
+        purgeExpiredTokens();
+        var entry = magicTokens.remove(token);
+        if (entry == null) return null;
+        if (entry.expiresAt() < System.currentTimeMillis()) return null;
+        return entry.player();
+    }
+
+    private void purgeExpiredTokens() {
+        long now = System.currentTimeMillis();
+        magicTokens.entrySet().removeIf(e -> e.getValue() == null || e.getValue().expiresAt() < now);
+    }
+
+    private String chooseMagicLang(Player player) {
+        var requested = sanitizeLang(player == null ? null : player.getLocale(), defaultLang);
+        if (hasExtensionForLang(requested)) return requested;
+        var base = requested.contains("-") ? requested.substring(0, requested.indexOf('-')) : requested;
+        if (hasExtensionForLang(base)) return base;
+        if (hasExtensionForLang(defaultLang)) return defaultLang;
+        return "en";
+    }
+
+    private boolean hasExtensionForLang(String lang) {
+        if (lang == null || lang.isBlank()) return false;
+        var path = "turbowarp/twbridge-" + lang + ".js";
+        try (var ignored = getResource(path)) {
+            return ignored != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static String sanitizeBranch(String raw, String fallback) {
+        var fb = (fallback == null || fallback.isBlank()) ? "main" : fallback.trim();
+        if (raw == null) return fb;
+        var normalized = raw.trim();
+        if (normalized.isBlank() || normalized.length() > 48) return fb;
+        if (!normalized.matches("[A-Za-z0-9._-]{1,48}")) return fb;
+        return normalized;
+    }
+
+    private static String encodeComponent(String value) {
+        if (value == null) return null;
+        try {
+            return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     public void handleAgentTeleportToPlayer(String agentId,
@@ -822,6 +956,15 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return null;
     }
 
+    private static String sanitizeLang(String raw, String fallback) {
+        var fb = (fallback == null || fallback.isBlank()) ? "en" : fallback.trim().toLowerCase(Locale.ROOT);
+        if (raw == null) return fb;
+        var normalized = raw.trim().replace('_', '-').toLowerCase(Locale.ROOT);
+        if (normalized.isBlank() || normalized.length() > 32) return fb;
+        if (!normalized.matches("^[a-z0-9]{2,8}(?:-[a-z0-9]{1,8})*$")) return fb;
+        return normalized;
+    }
+
     private static String chooseClientHost(String... candidates) {
         for (var candidate : candidates) {
             if (candidate == null || candidate.isBlank()) continue;
@@ -875,6 +1018,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private record AgentEntry(UUID entityId, String owner) {}
+
+    private record MagicToken(String player, long expiresAt) {}
 
     private static class AgentInventory {
         final ItemStack[] slots = new ItemStack[27];
