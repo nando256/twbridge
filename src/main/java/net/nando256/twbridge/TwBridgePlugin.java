@@ -61,6 +61,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private int wsPort;
     private int advertisePort;
     private String advertiseScheme;
+    private boolean httpEnabled;
+    private String httpBindAddress;
+    private int httpPort;
+    private boolean magicLinkUseLocalHttp;
     private String defaultLang;
     private String defaultBranch;
     private volatile List<BlockEntry> cachedBlockList;
@@ -84,6 +88,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         requireSession = getConfig().getBoolean("ws.requireSession", true);
         allowLegacyPairing = getConfig().getBoolean("ws.allowLegacyPairing", false);
         magicTokenTtlSeconds = Math.max(30, getConfig().getInt("magicLink.tokenTtlSeconds", 300));
+        magicLinkUseLocalHttp = getConfig().getBoolean("magicLink.useLocalHttp", true);
         magicLinkBaseUrl = firstNonBlank(getConfig().getString("magicLink.baseUrl"), "https://turbowarp.org/editor");
         magicLinkExtensionTemplate = firstNonBlank(
             getConfig().getString("magicLink.extensionTemplate"),
@@ -112,7 +117,17 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         int pairWindowSec = getConfig().getInt("pairing.windowSeconds", 60);
         advertiseHost = firstNonBlank(getConfig().getString("ws.advertiseAddress"));
         advertisedWsUrl = buildWsDefaultUrl(resolveAdvertisedHost(null), advertisePort, advertiseScheme);
+        httpEnabled = getConfig().getBoolean("http.enabled", true);
+        httpBindAddress = firstNonBlank(getConfig().getString("http.bindAddress"), "0.0.0.0");
+        httpPort = getConfig().getInt("http.port", 8788);
 
+        if (httpEnabled && magicLinkUseLocalHttp) {
+            var hostForHttp = resolveAdvertisedHost(null);
+            var baseUrl = "http://" + hostForHttp + ":" + httpPort + "/editor.html";
+            var extUrl = "http://" + hostForHttp + ":" + httpPort + "/twbridge-:lang.js";
+            magicLinkBaseUrl = baseUrl;
+            magicLinkExtensionTemplate = extUrl;
+        }
         try {
             wsServer = new BridgeServer(this, wsAddr, wsPort, origins, rate, maxBytes, pairingRequired, pairWindowSec, requireSession, allowLegacyPairing);
             wsServer.setReuseAddr(true);
@@ -124,14 +139,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        if (getConfig().getBoolean("http.enabled", true)) {
-            String httpAddr = firstNonBlank(getConfig().getString("http.bindAddress"), "0.0.0.0");
-            int httpPort = getConfig().getInt("http.port", 8788);
+        if (httpEnabled) {
             int cacheSeconds = Math.max(0, getConfig().getInt("http.cacheSeconds", 300));
             try {
-                httpServer = new StaticHttpServer(this, httpAddr, httpPort, "turbowarp/", cacheSeconds);
+                httpServer = new StaticHttpServer(this, httpBindAddress, httpPort, "turbowarp/", cacheSeconds);
                 httpServer.start();
-                getLogger().info("HTTP: http://" + httpAddr + ":" + httpPort + "/");
+                getLogger().info("HTTP: http://" + httpBindAddress + ":" + httpPort + "/");
             } catch (Exception e) {
                 getLogger().severe("HTTP Server Failed: " + e.getMessage());
             }
