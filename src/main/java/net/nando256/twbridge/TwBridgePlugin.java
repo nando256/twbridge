@@ -101,13 +101,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             getConfig().getBoolean("pairing.enabled", true)
         );
         int pairWindowSec = getConfig().getInt("pairing.windowSeconds", 60);
-        advertiseHost = chooseClientHost(
-            getConfig().getString("ws.advertiseAddress"),
-            getServer() == null ? null : getServer().getIp(),
-            wsAddr
-        );
-        String wsDefaultUrl = buildWsDefaultUrl(advertiseHost, wsPort);
-        advertisedWsUrl = wsDefaultUrl;
+        advertiseHost = firstNonBlank(getConfig().getString("ws.advertiseAddress"));
+        advertisedWsUrl = buildWsDefaultUrl(resolveAdvertisedHost(null), wsPort);
 
         try {
             wsServer = new BridgeServer(this, wsAddr, wsPort, origins, rate, maxBytes, pairingRequired, pairWindowSec, requireSession, allowLegacyPairing);
@@ -273,17 +268,20 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private String resolveAdvertisedHost(Player player) {
         var configured = firstNonBlank(advertiseHost, null);
-        if (configured != null && !isAnyAddress(configured)) return configured;
-        if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
-            var addr = player.getAddress().getAddress();
-            var host = addr.getHostAddress();
-            if (host != null && !host.isBlank() && !addr.isAnyLocalAddress() && !addr.isLoopbackAddress()) {
-                return host;
-            }
+        if (configured != null && !isAnyAddress(configured) && !isLoopbackHost(configured)) return configured.trim();
+
+        var serverIp = getServer() == null ? null : getServer().getIp();
+        if (serverIp != null && !serverIp.isBlank() && !isAnyAddress(serverIp) && !isLoopbackHost(serverIp)) {
+            return serverIp.trim();
         }
-        if (wsBindAddress != null && !isAnyAddress(wsBindAddress)) return wsBindAddress;
+
+        if (wsBindAddress != null && !isAnyAddress(wsBindAddress) && !isLoopbackHost(wsBindAddress)) {
+            return wsBindAddress.trim();
+        }
+
         var detected = detectLocalIp();
-        if (detected != null && !detected.isBlank()) return detected;
+        if (detected != null && !detected.isBlank() && !isLoopbackHost(detected) && !isAnyAddress(detected)) return detected;
+
         return "127.0.0.1";
     }
 
@@ -1031,6 +1029,16 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             || normalized.equals("::")
             || normalized.equals("::0")
             || normalized.equals("*");
+    }
+
+    private static boolean isLoopbackHost(String host) {
+        if (host == null) return true;
+        var normalized = host.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("localhost")
+            || normalized.equals("127.0.0.1")
+            || normalized.startsWith("127.")
+            || normalized.equals("::1")
+            || normalized.equals("[::1]");
     }
 
     private static String buildWsDefaultUrl(String host, int port) {
