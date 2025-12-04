@@ -248,7 +248,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String resolveExtensionUrl(String lang, String branch, Player player) {
         var template = magicLinkExtensionTemplate == null ? "" : magicLinkExtensionTemplate;
         if (magicLinkUseLocalHttp && httpEnabled) {
-            var host = resolveAdvertisedHost(player);
+            var host = ensureHost(resolveAdvertisedHost(player));
             template = "http://" + host + ":" + httpPort + "/twbridge-:lang.js";
         }
         var resolved = template;
@@ -267,12 +267,19 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private String resolveBaseUrl(Player player) {
         if (magicLinkUseLocalHttp && httpEnabled) {
-            var host = resolveAdvertisedHost(player);
+            var host = ensureHost(resolveAdvertisedHost(player));
             return "http://" + host + ":" + httpPort + "/editor.html";
         }
         return magicLinkBaseUrl == null || magicLinkBaseUrl.isBlank()
             ? "https://turbowarp.org/editor"
             : magicLinkBaseUrl.trim();
+    }
+
+    private String ensureHost(String host) {
+        if (host == null || host.isBlank() || isAnyAddress(host) || isLoopbackHost(host)) {
+            return "127.0.0.1";
+        }
+        return host;
     }
 
     private String issueMagicToken(String playerName) {
