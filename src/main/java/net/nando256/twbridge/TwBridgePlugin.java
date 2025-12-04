@@ -121,13 +121,6 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         httpBindAddress = firstNonBlank(getConfig().getString("http.bindAddress"), "0.0.0.0");
         httpPort = getConfig().getInt("http.port", 8788);
 
-        if (httpEnabled && magicLinkUseLocalHttp) {
-            var hostForHttp = resolveAdvertisedHost(null);
-            var baseUrl = "http://" + hostForHttp + ":" + httpPort + "/editor.html";
-            var extUrl = "http://" + hostForHttp + ":" + httpPort + "/twbridge-:lang.js";
-            magicLinkBaseUrl = baseUrl;
-            magicLinkExtensionTemplate = extUrl;
-        }
         try {
             wsServer = new BridgeServer(this, wsAddr, wsPort, origins, rate, maxBytes, pairingRequired, pairWindowSec, requireSession, allowLegacyPairing);
             wsServer.setReuseAddr(true);
@@ -236,10 +229,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if (token == null) return null;
         var lang = chooseMagicLang(player);
         var branch = sanitizeBranch(branchOverride, defaultBranch);
-        var extensionUrl = resolveExtensionUrl(lang, branch);
+        var extensionUrl = resolveExtensionUrl(lang, branch, player);
         var hostForPlayer = resolveAdvertisedHost(player);
         var wsUrl = buildWsDefaultUrl(hostForPlayer, advertisePort, advertiseScheme);
-        var base = magicLinkBaseUrl == null || magicLinkBaseUrl.isBlank() ? "https://turbowarp.org/editor" : magicLinkBaseUrl.trim();
+        var base = resolveBaseUrl(player);
         var extWithQuery = extensionUrl
             + (extensionUrl.contains("?") ? "&" : "?")
             + "host=" + encodeComponent(wsUrl)
@@ -252,8 +245,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return builder.toString();
     }
 
-    private String resolveExtensionUrl(String lang, String branch) {
+    private String resolveExtensionUrl(String lang, String branch, Player player) {
         var template = magicLinkExtensionTemplate == null ? "" : magicLinkExtensionTemplate;
+        if (magicLinkUseLocalHttp && httpEnabled) {
+            var host = resolveAdvertisedHost(player);
+            template = "http://" + host + ":" + httpPort + "/twbridge-:lang.js";
+        }
         var resolved = template;
         if (branch != null) {
             if (resolved.contains(":branch")) {
@@ -266,6 +263,16 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             resolved = resolved.replace(":lang", lang);
         }
         return resolved;
+    }
+
+    private String resolveBaseUrl(Player player) {
+        if (magicLinkUseLocalHttp && httpEnabled) {
+            var host = resolveAdvertisedHost(player);
+            return "http://" + host + ":" + httpPort + "/editor.html";
+        }
+        return magicLinkBaseUrl == null || magicLinkBaseUrl.isBlank()
+            ? "https://turbowarp.org/editor"
+            : magicLinkBaseUrl.trim();
     }
 
     private String issueMagicToken(String playerName) {
