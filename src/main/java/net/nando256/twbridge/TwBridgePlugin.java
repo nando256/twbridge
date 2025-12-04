@@ -277,6 +277,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private String ensureHost(String host) {
         if (host == null || host.isBlank() || isAnyAddress(host) || isLoopbackHost(host)) {
+            var detected = detectLocalIp();
+            if (detected != null && !detected.isBlank()) return detected;
             return "127.0.0.1";
         }
         return host;
