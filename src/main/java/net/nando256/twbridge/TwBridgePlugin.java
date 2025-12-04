@@ -972,7 +972,36 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             if (isAnyAddress(normalized)) continue;
             return normalized;
         }
-        return "127.0.0.1";
+        var detected = detectLocalIp();
+        return detected == null || detected.isBlank() ? "127.0.0.1" : detected;
+    }
+
+    private static String detectLocalIp() {
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> ifaces = java.net.NetworkInterface.getNetworkInterfaces();
+            java.net.InetAddress firstNonLoopback = null;
+            while (ifaces != null && ifaces.hasMoreElements()) {
+                var iface = ifaces.nextElement();
+                if (iface == null || !iface.isUp() || iface.isLoopback()) continue;
+                var addrs = iface.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    var addr = addrs.nextElement();
+                    if (addr.isLoopbackAddress() || addr.isAnyLocalAddress()) continue;
+                    if (addr instanceof java.net.Inet6Address && ((java.net.Inet6Address) addr).isLinkLocalAddress()) continue;
+                    if (addr.isLinkLocalAddress()) continue;
+                    if (addr.isSiteLocalAddress() && addr instanceof java.net.Inet4Address) {
+                        return addr.getHostAddress();
+                    }
+                    if (firstNonLoopback == null) {
+                        firstNonLoopback = addr;
+                    }
+                }
+            }
+            if (firstNonLoopback != null) return firstNonLoopback.getHostAddress();
+            var local = java.net.InetAddress.getLocalHost();
+            if (local != null && !local.isLoopbackAddress() && !local.isAnyLocalAddress()) return local.getHostAddress();
+        } catch (Exception ignored) {}
+        return null;
     }
 
     private static boolean isAnyAddress(String host) {
