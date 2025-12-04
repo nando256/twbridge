@@ -24,6 +24,10 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
+import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.ComponentBuilder;
+import net.md_5.bungee.api.chat.HoverEvent;
+import net.md_5.bungee.api.chat.TextComponent;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -198,7 +202,19 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             sender.sendMessage("Failed to create link");
             return true;
         }
-        player.sendMessage(ChatColor.AQUA + "[twbridge] TurboWarp link: " + ChatColor.UNDERLINE + link);
+        try {
+            var clickable = new TextComponent("[twbridge] TurboWarp link: ");
+            clickable.setColor(net.md_5.bungee.api.ChatColor.AQUA);
+            var linkPart = new TextComponent(link);
+            linkPart.setColor(net.md_5.bungee.api.ChatColor.AQUA);
+            linkPart.setUnderlined(true);
+            linkPart.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, link));
+            linkPart.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder("Click to open").create()));
+            clickable.addExtra(linkPart);
+            player.spigot().sendMessage(clickable);
+        } catch (Exception ignored) {
+            player.sendMessage(ChatColor.AQUA + "[twbridge] TurboWarp link: " + ChatColor.UNDERLINE + link);
+        }
         return true;
     }
 
