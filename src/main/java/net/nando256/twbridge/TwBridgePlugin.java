@@ -83,7 +83,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         magicLinkBaseUrl = firstNonBlank(getConfig().getString("magicLink.baseUrl"), "https://turbowarp.org/editor");
         magicLinkExtensionTemplate = firstNonBlank(
             getConfig().getString("magicLink.extensionTemplate"),
-            "https://cdn.jsdelivr.net/gh/nando256/twbridge@:branch/src/main/resources/turbowarp/twbridge-:lang.js"
+            "https://cdn.jsdelivr.net/gh/nando256/twbridge@:branch/turbowarp/twbridge-:lang.js"
         );
         defaultLang = sanitizeLang(getConfig().getString("magicLink.defaultLang"), "en");
         defaultBranch = sanitizeBranch(getConfig().getString("magicLink.defaultBranch"), "main");
