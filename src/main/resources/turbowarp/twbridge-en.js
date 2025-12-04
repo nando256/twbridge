@@ -45,7 +45,7 @@
   const TWB_LOCALES = {
     en: {
       extName: 'Tw Bridge',
-      blockConnect: 'connect ws [URL] using token [TOKEN]',
+      blockConnect: 'reconnect saved link',
       blockDisconnect: 'disconnect ws',
       blockIsConnected: 'connected?',
       blockCurrentPlayer: 'connected player',
@@ -69,7 +69,7 @@
     },
     ja: {
       extName: 'Tw Bridge',
-      blockConnect: 'WS [URL] にトークン [TOKEN] で接続',
+      blockConnect: '保存されたリンクで再接続',
       blockDisconnect: 'WS を切断',
       blockIsConnected: '接続中？',
       blockCurrentPlayer: '接続中のプレイヤー',
@@ -202,6 +202,14 @@
       this.sessionId = res.sessionId;
       this.boundPlayer = res.player || '';
       this.boot.token = trimmedToken;
+      this.boot.host = this.wsUrl;
+    }
+
+    async reconnectSaved() {
+      const url = this.boot.host && this.boot.host.trim();
+      const token = this.boot.token && this.boot.token.trim();
+      if (!url || !token) throw new Error('missing saved link info');
+      await this.connectWithToken(url, token);
     }
 
     disconnect() {
@@ -377,11 +385,7 @@
           {
             opcode: 'connect',
             blockType: Scratch.BlockType.COMMAND,
-            text: twbText('blockConnect'),
-            arguments: {
-              URL: { type: Scratch.ArgumentType.STRING, defaultValue: TWB_BOOT_CONFIG.host || WS_DEFAULT },
-              TOKEN:{ type: Scratch.ArgumentType.STRING, defaultValue: TWB_BOOT_CONFIG.token || 'token' }
-            }
+            text: twbText('blockConnect')
           },
           {
             opcode: 'disconnect',
@@ -538,11 +542,8 @@
       return bridge.agentBlockChoicesMenu();
     }
 
-    async connect(args) {
-      await bridge.connectWithToken(
-        String(args.URL || ""),
-        String(args.TOKEN || TWB_BOOT_CONFIG.token || "")
-      );
+    async connect() {
+      await bridge.reconnectSaved();
       await bridge.fetchBlocksSafe();
     }
     disconnect() { bridge.disconnect(); }
