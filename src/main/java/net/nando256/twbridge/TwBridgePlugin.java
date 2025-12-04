@@ -248,7 +248,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String resolveExtensionUrl(String lang, String branch, Player player) {
         var template = magicLinkExtensionTemplate == null ? "" : magicLinkExtensionTemplate;
         if (magicLinkUseLocalHttp && httpEnabled) {
-            var host = ensureHost(resolveAdvertisedHost(player));
+            var host = resolveHttpHost(player);
             template = "http://" + host + ":" + httpPort + "/twbridge-:lang.js";
         }
         var resolved = template;
@@ -267,7 +267,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private String resolveBaseUrl(Player player) {
         if (magicLinkUseLocalHttp && httpEnabled) {
-            var host = ensureHost(resolveAdvertisedHost(player));
+            var host = resolveHttpHost(player);
             return "http://" + host + ":" + httpPort + "/editor.html";
         }
         return magicLinkBaseUrl == null || magicLinkBaseUrl.isBlank()
@@ -280,6 +280,16 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             return "127.0.0.1";
         }
         return host;
+    }
+
+    private String resolveHttpHost(Player player) {
+        var chosen = firstNonBlank(
+            advertiseHost,
+            resolveAdvertisedHost(player),
+            httpBindAddress,
+            wsBindAddress
+        );
+        return ensureHost(chosen);
     }
 
     private String issueMagicToken(String playerName) {
