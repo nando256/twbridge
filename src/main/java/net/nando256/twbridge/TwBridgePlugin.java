@@ -54,6 +54,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String magicLinkBaseUrl;
     private String magicLinkExtensionTemplate;
     private String advertisedWsUrl;
+    private String advertiseHost;
+    private String wsBindAddress;
+    private int wsPort;
     private String defaultLang;
     private String defaultBranch;
     private volatile List<BlockEntry> cachedBlockList;
@@ -88,7 +91,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             getConfig().getString("ws.address"),
             "0.0.0.0"
         );
-        int wsPort = getConfig().getInt("ws.port", 8787);
+        wsBindAddress = wsAddr;
+        wsPort = getConfig().getInt("ws.port", 8787);
         int rate = getConfig().getInt("ws.maxMsgPerSecond", 30);
         int maxBytes = getConfig().getInt("ws.maxMsgBytes", 8192);
         var origins = new java.util.HashSet<>(getConfig().getStringList("ws.originWhitelist"));
@@ -97,12 +101,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             getConfig().getBoolean("pairing.enabled", true)
         );
         int pairWindowSec = getConfig().getInt("pairing.windowSeconds", 60);
-        var clientHost = chooseClientHost(
-            getServer() == null ? null : getServer().getIp(),
+        advertiseHost = chooseClientHost(
             getConfig().getString("ws.advertiseAddress"),
+            getServer() == null ? null : getServer().getIp(),
             wsAddr
         );
-        String wsDefaultUrl = buildWsDefaultUrl(clientHost, wsPort);
+        String wsDefaultUrl = buildWsDefaultUrl(advertiseHost, wsPort);
         advertisedWsUrl = wsDefaultUrl;
 
         try {
@@ -202,7 +206,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var lang = chooseMagicLang(player);
         var branch = sanitizeBranch(branchOverride, defaultBranch);
         var extensionUrl = resolveExtensionUrl(lang, branch);
-        var wsUrl = advertisedWsUrl == null ? "ws://127.0.0.1:8787" : advertisedWsUrl;
+        var hostForPlayer = resolveAdvertisedHost(player);
+        var wsUrl = buildWsDefaultUrl(hostForPlayer, wsPort);
         var base = magicLinkBaseUrl == null || magicLinkBaseUrl.isBlank() ? "https://turbowarp.org/editor" : magicLinkBaseUrl.trim();
         var extWithQuery = extensionUrl
             + (extensionUrl.contains("?") ? "&" : "?")
@@ -264,6 +269,22 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if (hasExtensionForLang(base)) return base;
         if (hasExtensionForLang(defaultLang)) return defaultLang;
         return "en";
+    }
+
+    private String resolveAdvertisedHost(Player player) {
+        var configured = firstNonBlank(advertiseHost, null);
+        if (configured != null && !isAnyAddress(configured)) return configured;
+        if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
+            var addr = player.getAddress().getAddress();
+            var host = addr.getHostAddress();
+            if (host != null && !host.isBlank() && !addr.isAnyLocalAddress() && !addr.isLoopbackAddress()) {
+                return host;
+            }
+        }
+        if (wsBindAddress != null && !isAnyAddress(wsBindAddress)) return wsBindAddress;
+        var detected = detectLocalIp();
+        if (detected != null && !detected.isBlank()) return detected;
+        return "127.0.0.1";
     }
 
     private boolean hasExtensionForLang(String lang) {
