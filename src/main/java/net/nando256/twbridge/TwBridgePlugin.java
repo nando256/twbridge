@@ -309,10 +309,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveAdvertisedHost(Player player) {
-        // Prefer the address the player actually used to reach the server
+        // Prefer an interface that matches the player's subnet (e.g., same /24)
         if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
-            var host = player.getAddress().getAddress().getHostAddress();
-            if (!isAnyAddress(host) && !isLoopbackHost(host)) return host.trim();
+            var remoteHost = player.getAddress().getAddress().getHostAddress();
+            var matched = findLocalForRemote(remoteHost);
+            if (matched != null && !matched.isBlank()) return matched;
         }
 
         var configured = firstNonBlank(advertiseHost, null);
@@ -331,6 +332,33 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if (detected != null && !detected.isBlank() && !isLoopbackHost(detected) && !isAnyAddress(detected)) return detected;
 
         return "127.0.0.1";
+    }
+
+    private String findLocalForRemote(String remoteHost) {
+        if (remoteHost == null || remoteHost.isBlank()) return null;
+        try {
+            var remote = java.net.InetAddress.getByName(remoteHost.trim());
+            if (!(remote instanceof java.net.Inet4Address remote4)) return null;
+            int remoteInt = java.nio.ByteBuffer.wrap(remote4.getAddress()).getInt();
+            int mask = 0xFFFFFF00; // /24 subnet match
+            java.util.Enumeration<java.net.NetworkInterface> ifaces = java.net.NetworkInterface.getNetworkInterfaces();
+            while (ifaces != null && ifaces.hasMoreElements()) {
+                var iface = ifaces.nextElement();
+                if (iface == null || !iface.isUp() || iface.isLoopback()) continue;
+                var addrs = iface.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    var addr = addrs.nextElement();
+                    if (!(addr instanceof java.net.Inet4Address local4)) continue;
+                    if (local4.isLoopbackAddress() || local4.isAnyLocalAddress()) continue;
+                    if (local4.isLinkLocalAddress()) continue;
+                    int localInt = java.nio.ByteBuffer.wrap(local4.getAddress()).getInt();
+                    if ((localInt & mask) == (remoteInt & mask)) {
+                        return local4.getHostAddress();
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     private boolean hasLocaleForLang(String lang) {
