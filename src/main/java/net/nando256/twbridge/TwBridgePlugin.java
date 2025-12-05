@@ -309,6 +309,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveAdvertisedHost(Player player) {
+        // Prefer the address the player actually used to reach the server
+        if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
+            var host = player.getAddress().getAddress().getHostAddress();
+            if (!isAnyAddress(host) && !isLoopbackHost(host)) return host.trim();
+        }
+
         var configured = firstNonBlank(advertiseHost, null);
         if (configured != null && !isAnyAddress(configured) && !isLoopbackHost(configured)) return configured.trim();
 
