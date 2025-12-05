@@ -67,6 +67,13 @@ public final class StaticHttpServer {
                     return;
                 }
                 byte[] bytes = is.readAllBytes();
+                if ("twbridge.js".equals(path)) {
+                    try {
+                        var body = new String(bytes, StandardCharsets.UTF_8);
+                        body = body.replace("__BLOCK_LIST__", plugin.getBlockChoicesJson());
+                        bytes = body.getBytes(StandardCharsets.UTF_8);
+                    } catch (Exception ignored) {}
+                }
                 var headers = exchange.getResponseHeaders();
                 headers.add("Content-Type", contentType(path));
                 headers.add("Cache-Control", "public, max-age=" + cacheSeconds);

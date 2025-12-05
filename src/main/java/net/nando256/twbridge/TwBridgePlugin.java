@@ -68,6 +68,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private int httpPort;
     private String defaultLang;
     private String defaultBranch;
+    private String blockChoicesJson;
 
     @Override
     public void onEnable() {
@@ -91,6 +92,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         defaultLang = sanitizeLang(getConfig().getString("magicLink.defaultLang"), "en");
         defaultBranch = sanitizeBranchValue(getConfig().getString("magicLink.defaultBranch"), "main");
         magicTokens.clear();
+        blockChoicesJson = buildBlockChoicesJson();
 
         String wsAddr = firstNonBlank(
             getConfig().getString("ws.bindAddress"),
@@ -360,6 +362,50 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if (normalized.isBlank() || normalized.length() > 48) return fb;
         if (!normalized.matches("[A-Za-z0-9._-]{1,48}")) return fb;
         return normalized;
+    }
+
+    public String getBlockChoicesJson() {
+        if (blockChoicesJson != null && !blockChoicesJson.isBlank()) return blockChoicesJson;
+        return "[[\"stone\",\"stone\"],[\"dirt\",\"dirt\"],[\"cobblestone\",\"cobblestone\"]]";
+    }
+
+    private String buildBlockChoicesJson() {
+        var sb = new StringBuilder();
+        sb.append("[");
+        boolean first = true;
+        for (var material : Material.values()) {
+            if (!material.isBlock()) continue;
+            if (!material.isItem()) continue;
+            if (material.isAir()) continue;
+            var id = material.getKey().getKey();
+            var name = humanizeMaterialName(id);
+            if (!first) sb.append(",");
+            sb.append("[\"").append(escapeJson(name)).append("\",\"").append(escapeJson(id)).append("\"]");
+            first = false;
+        }
+        if (first) {
+            sb.append("[\"stone\",\"stone\"],[\"dirt\",\"dirt\"],[\"cobblestone\",\"cobblestone\"]");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private static String humanizeMaterialName(String key) {
+        if (key == null || key.isBlank()) return "";
+        var parts = key.split("_");
+        var builder = new StringBuilder();
+        for (var part : parts) {
+            if (part.isBlank()) continue;
+            if (builder.length() > 0) builder.append(' ');
+            builder.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) builder.append(part.substring(1));
+        }
+        return builder.toString();
+    }
+
+    private static String escapeJson(String raw) {
+        if (raw == null) return "";
+        return raw.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static String sanitizeScheme(String raw) {
