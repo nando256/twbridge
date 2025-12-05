@@ -93,7 +93,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         magicLinkBaseUrl = firstNonBlank(getConfig().getString("magicLink.baseUrl"), "https://turbowarp.org/editor");
         magicLinkExtensionTemplate = firstNonBlank(
             getConfig().getString("magicLink.extensionTemplate"),
-            "https://cdn.jsdelivr.net/gh/nando256/twbridge@:branch/turbowarp/twbridge-:lang.js"
+            "https://cdn.jsdelivr.net/gh/nando256/twbridge@:branch/turbowarp/twbridge.js"
         );
         defaultLang = sanitizeLang(getConfig().getString("magicLink.defaultLang"), "en");
         defaultBranch = sanitizeBranch(getConfig().getString("magicLink.defaultBranch"), "main");
@@ -253,12 +253,16 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var base = magicLinkUseLocalHttp && httpEnabled
             ? "http://" + httpHost + ":" + httpPort + "/editor.html"
             : resolveBaseUrl(player);
-        var extWithQuery = testMode
-            ? extensionUrl
-            : extensionUrl
+        var extWithQuery = extensionUrl;
+        if (testMode) {
+            extWithQuery = extensionUrl + (extensionUrl.contains("?") ? "&" : "?") + "lang=" + encodeComponent(lang);
+        } else {
+            extWithQuery = extensionUrl
                 + (extensionUrl.contains("?") ? "&" : "?")
                 + "host=" + encodeComponent(wsUrl)
-                + "&token=" + encodeComponent(token);
+                + "&token=" + encodeComponent(token)
+                + "&lang=" + encodeComponent(lang);
+        }
         var encodedExt = encodeComponent(extWithQuery);
         if (encodedExt == null) return null;
         var builder = new StringBuilder(base);
@@ -269,7 +273,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String resolveExtensionUrl(String lang, String branch, String httpHost) {
         var template = magicLinkExtensionTemplate == null ? "" : magicLinkExtensionTemplate;
         if (magicLinkUseLocalHttp && httpEnabled) {
-            template = "http://" + httpHost + ":" + httpPort + "/twbridge-:lang.js";
+            template = "http://" + httpHost + ":" + httpPort + "/twbridge.js";
         }
         var resolved = template;
         if (branch != null) {
@@ -278,9 +282,6 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             } else if (defaultBranch != null && !defaultBranch.isBlank()) {
                 resolved = resolved.replace("@" + defaultBranch, "@" + branch);
             }
-        }
-        if (lang != null) {
-            resolved = resolved.replace(":lang", lang);
         }
         return resolved;
     }
@@ -349,10 +350,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private String chooseMagicLang(Player player) {
         var requested = sanitizeLang(player == null ? null : player.getLocale(), defaultLang);
-        if (hasExtensionForLang(requested)) return requested;
+        if (hasLocaleForLang(requested)) return requested;
         var base = requested.contains("-") ? requested.substring(0, requested.indexOf('-')) : requested;
-        if (hasExtensionForLang(base)) return base;
-        if (hasExtensionForLang(defaultLang)) return defaultLang;
+        if (hasLocaleForLang(base)) return base;
+        if (hasLocaleForLang(defaultLang)) return defaultLang;
         return "en";
     }
 
@@ -375,9 +376,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return "127.0.0.1";
     }
 
-    private boolean hasExtensionForLang(String lang) {
+    private boolean hasLocaleForLang(String lang) {
         if (lang == null || lang.isBlank()) return false;
-        var path = "turbowarp/twbridge-" + lang + ".js";
+        var path = "turbowarp/locale/" + lang + ".json";
         try (var ignored = getResource(path)) {
             return ignored != null;
         } catch (Exception e) {

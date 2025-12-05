@@ -22,7 +22,7 @@ pairing:
 magicLink:
   enabled: true
   baseUrl: "https://turbowarp.org/editor"
-  extensionTemplate: "https://cdn.jsdelivr.net/gh/nando256/twbridge@:branch/turbowarp/twbridge-:lang.js"
+  extensionTemplate: "https://cdn.jsdelivr.net/gh/nando256/twbridge@:branch/turbowarp/twbridge.js"
   useLocalHttp: true
   tokenTtlSeconds: 300
   defaultLang: "en"
