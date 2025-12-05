@@ -11,7 +11,6 @@ spawn/teleport a minimal "agent" armor stand, and despawn it programmatically.
   and despawn agent
 - Agents are invisible to normal gameplay (armor stand, invulnerable,
   floating at block center, glowing, iron/leather armor with `MHF_Golem` head)
-- `/twbridge reload` command for admin control
 
 ## Usage
 1. In Minecraft, run `/tw` to receive a one-time TurboWarp link bound to your player. The link includes the WebSocket host, token, and language (used to load locale JSON).

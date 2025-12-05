@@ -154,14 +154,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if ("tw".equals(cmdName)) {
             return handleMagicLinkCommand(s, a);
         }
-
-        if (!"twbridge".equals(cmdName)) return false;
-        if (!s.hasPermission("twbridge.admin")) { s.sendMessage("No permission"); return true; }
-        if (a.length == 0) { s.sendMessage("/twbridge reload"); return true; }
-        switch (a[0].toLowerCase(Locale.ROOT)) {
-            case "reload" -> { reloadConfig(); applyConfigAndStart(); s.sendMessage("twbridge reloaded."); }
-        }
-        return true;
+        return false;
     }
 
     private boolean handleMagicLinkCommand(CommandSender sender, String[] args) {
