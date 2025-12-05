@@ -87,7 +87,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
         magicLinkEnabled = getConfig().getBoolean("magicLink.enabled", true);
         requireSession = getConfig().getBoolean("ws.requireSession", true);
-        allowLegacyPairing = getConfig().getBoolean("ws.allowLegacyPairing", false);
+        allowLegacyPairing = false; // legacy pairing is no longer exposed
         magicTokenTtlSeconds = Math.max(30, getConfig().getInt("magicLink.tokenTtlSeconds", 300));
         defaultLang = sanitizeLang(getConfig().getString("magicLink.defaultLang"), "en");
         defaultBranch = sanitizeBranchValue(getConfig().getString("magicLink.defaultBranch"), "main");
@@ -157,20 +157,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
         if (!"twbridge".equals(cmdName)) return false;
         if (!s.hasPermission("twbridge.admin")) { s.sendMessage("No permission"); return true; }
-        if (a.length == 0) { s.sendMessage("/twbridge reload | pair"); return true; }
+        if (a.length == 0) { s.sendMessage("/twbridge reload"); return true; }
         switch (a[0].toLowerCase(Locale.ROOT)) {
             case "reload" -> { reloadConfig(); applyConfigAndStart(); s.sendMessage("twbridge reloaded."); }
-            case "pair" -> {
-                if (!allowLegacyPairing) { s.sendMessage("Pairing is disabled (ws.allowLegacyPairing = false)."); break; }
-                if (wsServer == null) { s.sendMessage("WS server not running."); break; }
-                var code = wsServer.rotatePairCode();
-                if (code == null) {
-                    s.sendMessage("Pairing is disabled (ws.requirePairing = false).");
-                } else {
-                    int ttl = getConfig().getInt("pairing.windowSeconds", 60);
-                    s.sendMessage("Pair code: " + code + " (valid " + ttl + "s)");
-                }
-            }
         }
         return true;
     }

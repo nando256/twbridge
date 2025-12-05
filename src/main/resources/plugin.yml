@@ -8,7 +8,7 @@ commands:
   twbridge:
     description: Control twbridge
     permission: twbridge.admin
-    usage: /twbridge <reload|pair>
+    usage: /twbridge reload
   tw:
     description: Get TurboWarp magic link
     permission: twbridge.link
