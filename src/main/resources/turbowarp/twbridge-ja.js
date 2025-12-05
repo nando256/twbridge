@@ -235,11 +235,17 @@
 
     setAvailableBlocks(blocks) {
       if (!Array.isArray(blocks)) {
-        this.blockChoices = [];
+        this.blockChoices = this.blockChoices && this.blockChoices.length ? this.blockChoices : [];
         return;
       }
       this.blockChoices = blocks
         .map(block => {
+          if (Array.isArray(block) && block.length >= 2) {
+            const name = String(block[0] || '').trim();
+            const id = String(block[1] || '').trim();
+            if (!id) return null;
+            return { id, name: name || id };
+          }
           const id = String(block.id || '').trim();
           const name = String(block.name || '').trim();
           if (!id) return null;
@@ -264,12 +270,8 @@
 
     async fetchBlocksSafe() {
       try {
-        await this._ensureWS();
-        const res = await this._send({ cmd: 'blocks.list' });
-        if (res && Array.isArray(res.blocks)) {
-          this.setAvailableBlocks(res.blocks);
-        }
-      } catch (e) { /* ignore fetch failures */ }
+        this.setAvailableBlocks(TWB_BLOCK_CHOICES);
+      } catch (e) { /* ignore */ }
     }
 
     async runCommand(command) {

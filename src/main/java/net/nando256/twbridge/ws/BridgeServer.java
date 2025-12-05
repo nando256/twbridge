@@ -338,11 +338,7 @@ public class BridgeServer extends WebSocketServer {
             }
 
             if ("blocks.list".equals(cmd)) {
-                var array = new JSONArray();
-                plugin.getAvailableBlocks().forEach(block ->
-                    array.put(new JSONObject().put("id", block.id()).put("name", block.name()))
-                );
-                ok(conn, id, new JSONObject().put("blocks", array));
+                ok(conn, id, new JSONObject().put("blocks", new JSONArray()));
                 return;
             }
 

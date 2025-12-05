@@ -32,9 +32,7 @@ import net.md_5.bungee.api.chat.TextComponent;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -71,7 +69,6 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private boolean magicLinkUseLocalHttp;
     private String defaultLang;
     private String defaultBranch;
-    private volatile List<BlockEntry> cachedBlockList;
 
     @Override
     public void onEnable() {
@@ -768,19 +765,6 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return resolved.get();
     }
 
-    public List<BlockEntry> getAvailableBlocks() {
-        var cached = cachedBlockList;
-        if (cached != null) return cached;
-        synchronized (this) {
-            cached = cachedBlockList;
-            if (cached == null) {
-                cached = computeBlockList();
-                cachedBlockList = cached;
-            }
-        }
-        return cached;
-    }
-
     private void cleanupAgents() {
         if (agents.isEmpty()) return;
         runSync(() -> {
@@ -1140,32 +1124,6 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return effectiveScheme + "://" + normalizedHost + ":" + port;
     }
 
-    private List<BlockEntry> computeBlockList() {
-        var list = new ArrayList<BlockEntry>();
-        for (var material : Material.values()) {
-            if (!material.isBlock()) continue;
-            if (!material.isItem()) continue;
-            if (material.isAir()) continue;
-            var key = material.getKey().getKey();
-            list.add(new BlockEntry(key, humanizeMaterialName(key)));
-        }
-        list.sort(java.util.Comparator.comparing(BlockEntry::name));
-        return Collections.unmodifiableList(list);
-    }
-
-    private static String humanizeMaterialName(String key) {
-        if (key == null || key.isBlank()) return "";
-        var parts = key.split("_");
-        var builder = new StringBuilder();
-        for (int i = 0; i < parts.length; i++) {
-            if (parts[i].isBlank()) continue;
-            if (builder.length() > 0) builder.append(' ');
-            builder.append(Character.toUpperCase(parts[i].charAt(0)));
-            if (parts[i].length() > 1) builder.append(parts[i].substring(1));
-        }
-        return builder.toString();
-    }
-
     private record AgentEntry(UUID entityId, String owner) {}
 
     private record MagicToken(String player, long expiresAt) {}
@@ -1174,6 +1132,4 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         final ItemStack[] slots = new ItemStack[27];
         int activeSlot = -1;
     }
-
-    public record BlockEntry(String id, String name) {}
 }
