@@ -309,9 +309,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveAdvertisedHost(Player player) {
-        // Prefer an interface that matches the player's subnet (e.g., same /24)
+        // Prefer the exact local interface used to reach the player's remote address,
+        // then fall back to a subnet match (e.g., same /24).
         if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
             var remoteHost = player.getAddress().getAddress().getHostAddress();
+            var routed = localAddressForRemote(remoteHost);
+            if (routed != null && !routed.isBlank()) return routed;
             var matched = findLocalForRemote(remoteHost);
             if (matched != null && !matched.isBlank()) return matched;
         }
@@ -1086,6 +1089,22 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         for (var c : candidates) {
             if (c != null && !c.isBlank()) return c;
         }
+        return null;
+    }
+
+    private String localAddressForRemote(String remoteHost) {
+        if (remoteHost == null || remoteHost.isBlank()) return null;
+        try {
+            var remote = new java.net.InetSocketAddress(remoteHost.trim(), 80);
+            try (var socket = new java.net.Socket()) {
+                socket.connect(remote, 500);
+                var local = socket.getLocalAddress();
+                if (local != null && !local.isAnyLocalAddress() && !local.isLoopbackAddress()) {
+                    var host = local.getHostAddress();
+                    if (!isAnyAddress(host) && !isLoopbackHost(host)) return host;
+                }
+            }
+        } catch (Exception ignored) {}
         return null;
     }
 
