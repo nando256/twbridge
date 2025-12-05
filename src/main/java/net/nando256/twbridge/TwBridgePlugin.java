@@ -253,10 +253,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var base = magicLinkUseLocalHttp && httpEnabled
             ? "http://" + httpHost + ":" + httpPort + "/editor.html"
             : resolveBaseUrl(player);
-        var extWithQuery = extensionUrl
-            + (extensionUrl.contains("?") ? "&" : "?")
-            + "host=" + encodeComponent(wsUrl)
-            + "&token=" + encodeComponent(token);
+        var extWithQuery = testMode
+            ? extensionUrl
+            : extensionUrl
+                + (extensionUrl.contains("?") ? "&" : "?")
+                + "host=" + encodeComponent(wsUrl)
+                + "&token=" + encodeComponent(token);
         var encodedExt = encodeComponent(extWithQuery);
         if (encodedExt == null) return null;
         var builder = new StringBuilder(base);
