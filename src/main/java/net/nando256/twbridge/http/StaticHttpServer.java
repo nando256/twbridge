@@ -53,6 +53,10 @@ public final class StaticHttpServer {
                 send(exchange, 400, "bad path");
                 return;
             }
+            // Accept both root and "/tw/" prefixed requests.
+            if (path.startsWith("tw/")) {
+                path = path.substring("tw/".length());
+            }
             if (path.isEmpty() || path.endsWith("/")) {
                 path = path + "index.html";
             }
