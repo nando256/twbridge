@@ -1,6 +1,10 @@
 (() => {
   // Minimal test extension to verify loading; no WS dependencies.
-  const Scratch = window.Scratch || {};
+  const Scratch = (typeof globalThis !== 'undefined' && globalThis.Scratch) ? globalThis.Scratch : null;
+  if (!Scratch || !Scratch.extensions || typeof Scratch.extensions.register !== 'function') {
+    console.error('[twbridge-test] Scratch environment not available');
+    return;
+  }
   const { BlockType } = Scratch;
 
   class TwBridgeTest {
@@ -24,9 +28,5 @@
     }
   }
 
-  if (typeof Scratch?.extensions?.register === 'function') {
-    Scratch.extensions.register(new TwBridgeTest());
-  } else if (typeof window !== 'undefined') {
-    console.error('[twbridge-test] Scratch.extensions.register not available');
-  }
+  Scratch.extensions.register(new TwBridgeTest());
 })();
