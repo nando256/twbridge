@@ -479,11 +479,7 @@
             text: twbText('blockSlotSet'),
             arguments: {
               ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
-              BLOCK: {
-                type: Scratch.ArgumentType.STRING,
-                menu: 'agentBlockChoices',
-                defaultValue: 'stone'
-              },
+              BLOCK: { type: Scratch.ArgumentType.STRING, defaultValue: 'stone' },
               COUNT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 16 },
               SLOT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 }
             }
