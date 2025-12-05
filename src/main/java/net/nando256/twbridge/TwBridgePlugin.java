@@ -252,8 +252,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var extWithQuery = extensionUrl
             + (extensionUrl.contains("?") ? "&" : "?")
             + "host=" + encodeComponent(wsUrl)
-            + "&token=" + encodeComponent(token)
-            + "&lang=" + encodeComponent(lang);
+            + "&token=" + encodeComponent(token);
         var encodedExt = encodeComponent(extWithQuery);
         if (encodedExt == null) return null;
         var builder = new StringBuilder(base);
