@@ -104,6 +104,8 @@ public final class StaticHttpServer {
 
         private void setSecurityHeaders(Headers h) {
             h.add("X-Content-Type-Options", "nosniff");
+            h.add("Access-Control-Allow-Origin", "*");
+            h.add("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
         }
     }
 
