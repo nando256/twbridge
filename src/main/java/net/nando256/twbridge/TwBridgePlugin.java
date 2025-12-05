@@ -89,7 +89,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         allowLegacyPairing = getConfig().getBoolean("ws.allowLegacyPairing", false);
         magicTokenTtlSeconds = Math.max(30, getConfig().getInt("magicLink.tokenTtlSeconds", 300));
         defaultLang = sanitizeLang(getConfig().getString("magicLink.defaultLang"), "en");
-        defaultBranch = sanitizeBranch(getConfig().getString("magicLink.defaultBranch"), "main");
+        defaultBranch = sanitizeBranchValue(getConfig().getString("magicLink.defaultBranch"), "main");
         magicTokens.clear();
 
         String wsAddr = firstNonBlank(
@@ -188,8 +188,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         }
         var firstArg = args != null && args.length > 0 ? args[0] : null;
         boolean testMode = firstArg != null && firstArg.equalsIgnoreCase("test");
-        var branchOverride = testMode ? null : firstArg;
-        var link = buildMagicLink(player, branchOverride, testMode);
+        var link = buildMagicLink(player, null, testMode);
         if (link == null || link.isBlank()) {
             sender.sendMessage("Failed to create link");
             return true;
@@ -236,11 +235,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var token = issueMagicToken(player == null ? null : player.getName());
         if (token == null) return null;
         var lang = chooseMagicLang(player);
-        var branch = sanitizeBranch(branchOverride, defaultBranch);
         var httpHost = resolveHttpHost(player);
         var extensionUrl = testMode
             ? resolveTestExtensionUrl(httpHost)
-            : resolveExtensionUrl(lang, branch, httpHost);
+            : resolveExtensionUrl(lang, httpHost);
         var hostForPlayer = resolveAdvertisedHost(player);
         var wsUrl = buildWsDefaultUrl(hostForPlayer, advertisePort, advertiseScheme);
         if (!httpEnabled) {
@@ -265,7 +263,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return builder.toString();
     }
 
-    private String resolveExtensionUrl(String lang, String branch, String httpHost) {
+    private String resolveExtensionUrl(String lang, String httpHost) {
         return "http://" + httpHost + ":" + httpPort + "/twbridge.js";
     }
 
@@ -355,7 +353,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         }
     }
 
-    private static String sanitizeBranch(String raw, String fallback) {
+    private static String sanitizeBranchValue(String raw, String fallback) {
         var fb = (fallback == null || fallback.isBlank()) ? "main" : fallback.trim();
         if (raw == null) return fb;
         var normalized = raw.trim();

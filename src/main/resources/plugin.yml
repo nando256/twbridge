@@ -12,7 +12,7 @@ commands:
   tw:
     description: Get TurboWarp magic link
     permission: twbridge.link
-    usage: /tw [branch]
+    usage: /tw
 permissions:
   twbridge.admin:
     default: op
