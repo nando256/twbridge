@@ -193,8 +193,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             sender.sendMessage("Magic link is disabled in config");
             return true;
         }
-        var branchOverride = args != null && args.length > 0 ? args[0] : null;
-        var link = buildMagicLink(player, branchOverride);
+        var firstArg = args != null && args.length > 0 ? args[0] : null;
+        boolean testMode = firstArg != null && firstArg.equalsIgnoreCase("test");
+        var branchOverride = testMode ? null : firstArg;
+        var link = buildMagicLink(player, branchOverride, testMode);
         if (link == null || link.isBlank()) {
             sender.sendMessage("Failed to create link");
             return true;
@@ -237,13 +239,15 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         });
     }
 
-    private String buildMagicLink(Player player, String branchOverride) {
+    private String buildMagicLink(Player player, String branchOverride, boolean testMode) {
         var token = issueMagicToken(player == null ? null : player.getName());
         if (token == null) return null;
         var lang = chooseMagicLang(player);
         var branch = sanitizeBranch(branchOverride, defaultBranch);
         var httpHost = resolveHttpHost(player);
-        var extensionUrl = resolveExtensionUrl(lang, branch, httpHost);
+        var extensionUrl = testMode
+            ? resolveTestExtensionUrl(httpHost)
+            : resolveExtensionUrl(lang, branch, httpHost);
         var hostForPlayer = resolveAdvertisedHost(player);
         var wsUrl = buildWsDefaultUrl(hostForPlayer, advertisePort, advertiseScheme);
         var base = magicLinkUseLocalHttp && httpEnabled
@@ -277,6 +281,14 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             resolved = resolved.replace(":lang", lang);
         }
         return resolved;
+    }
+
+    private String resolveTestExtensionUrl(String httpHost) {
+        if (magicLinkUseLocalHttp && httpEnabled) {
+            return "http://" + httpHost + ":" + httpPort + "/twbridge-test.js";
+        }
+        var base = magicLinkExtensionTemplate == null ? "" : magicLinkExtensionTemplate;
+        return base.replace("twbridge-:lang.js", "twbridge-test.js");
     }
 
     private String resolveBaseUrl(Player player) {
