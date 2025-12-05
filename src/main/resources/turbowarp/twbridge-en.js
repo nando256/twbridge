@@ -461,7 +461,7 @@
             text: twbText('blockFacePlayer'),
             arguments: {
               ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
-              PLAYER: { type: Scratch.ArgumentType.STRING, defaultValue: 'Steve' }
+              PLAYER: { type: Scratch.ArgumentType.STRING, defaultValue: '' }
             }
           },
           {
@@ -566,7 +566,7 @@
     async faceAgentToPlayer(args) {
       await bridge.faceAgentToPlayer(
         String(args.ID || ""),
-        String(args.PLAYER || "")
+        String(args.PLAYER || "") || bridge.currentPlayer()
       );
     }
     async activateAgentSlot(args) {
