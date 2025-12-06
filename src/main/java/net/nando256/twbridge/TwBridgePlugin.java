@@ -595,8 +595,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                     var res = method.invoke(sem);
                     if (res instanceof EntityType t) type = t;
                 } catch (Exception ignored) {
-                    // Fallback to deprecated API for older versions
-                    try { type = sem.getSpawnedType(); } catch (Exception ignored2) {}
+                    // Fallback to legacy API via reflection to avoid compile-time deprecation
+                    try {
+                        var m = sem.getClass().getMethod("getSpawnedType");
+                        var res = m.invoke(sem);
+                        if (res instanceof EntityType t) type = t;
+                    } catch (Exception ignored2) {}
                 }
             }
             if (type == null) {
