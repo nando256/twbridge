@@ -268,8 +268,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private String resolveHttpHost(Player player) {
         if (isUsableSpecificHost(httpBindAddress)) return ensureHost(httpBindAddress);
-        // When bind address is 0.0.0.0 or blank, reuse advertised host logic.
-        return ensureHost(resolveAdvertisedHost(player));
+        // When bind address is 0.0.0.0 or blank, pick a host based on client route / advertiseAddress,
+        // but do NOT let ws.bindAddress override HTTP host.
+        return ensureHost(resolveHttpAdvertisedHost(player));
     }
 
     private String issueMagicToken(String playerName) {
@@ -313,6 +314,36 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
         // Prefer the exact local interface used to reach the player's remote address,
         // then fall back to a subnet match (e.g., same /24).
+        if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
+            var localFromChannel = localAddressFromPlayer(player);
+            if (localFromChannel != null && !localFromChannel.isBlank()) return localFromChannel;
+            var remoteHost = player.getAddress().getAddress().getHostAddress();
+            var routed = localAddressForRemote(remoteHost);
+            if (routed != null && !routed.isBlank()) return routed;
+            var matched = findLocalForRemote(remoteHost);
+            if (matched != null && !matched.isBlank()) return matched;
+        }
+
+        var serverIp = getServer() == null ? null : getServer().getIp();
+        if (serverIp != null && !serverIp.isBlank() && !isAnyAddress(serverIp) && !isLoopbackHost(serverIp)) {
+            return serverIp.trim();
+        }
+
+        var detected = detectLocalIp();
+        if (detected != null && !detected.isBlank() && !isLoopbackHost(detected) && !isAnyAddress(detected)) return detected;
+
+        return "127.0.0.1";
+    }
+
+    /**
+     * Advertised host for HTTP links.
+     * - advertiseAddress has priority.
+     * - If not set, prefer the interface used for the player connection or a subnet match.
+     * - Never prefer ws.bindAddress here, so that HTTP can still follow the client's route when ws.bindAddress is fixed.
+     */
+    private String resolveHttpAdvertisedHost(Player player) {
+        if (isUsableSpecificHost(advertiseHost)) return advertiseHost.trim();
+
         if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
             var localFromChannel = localAddressFromPlayer(player);
             if (localFromChannel != null && !localFromChannel.isBlank()) return localFromChannel;
