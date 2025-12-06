@@ -13,6 +13,7 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.EntityType;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
@@ -21,6 +22,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.inventory.meta.SpawnEggMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
@@ -574,6 +576,27 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return raw.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    private boolean isSpawnEgg(ItemStack item) {
+        if (item == null) return false;
+        var meta = item.getItemMeta();
+        return meta instanceof SpawnEggMeta;
+    }
+
+    private org.bukkit.entity.Entity spawnFromEgg(ItemStack egg, Location loc) {
+        try {
+            var meta = egg.getItemMeta();
+            if (!(meta instanceof SpawnEggMeta sem)) return null;
+            EntityType type = sem.getSpawnedType();
+            if (type == null) return null;
+            var world = loc.getWorld();
+            if (world == null) return null;
+            return world.spawnEntity(loc, type);
+        } catch (Exception e) {
+            getLogger().warning("Spawn from egg failed: " + e.getMessage());
+            return null;
+        }
+    }
+
     private static String encodeComponent(String value) {
         if (value == null) return null;
         try {
@@ -902,8 +925,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 return;
             }
             var held = inventory.slots[inventory.activeSlot];
-            if (held == null || held.getType() == null || !held.getType().isBlock()) {
-                if (onFailure != null) onFailure.accept("active slot has no block");
+            if (held == null || held.getType() == null) {
+                if (onFailure != null) onFailure.accept("active slot empty");
                 return;
             }
             var targetOffset = resolvePlaceOffset(stand.getLocation(), direction);
@@ -917,11 +940,27 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 if (onFailure != null) onFailure.accept("invalid target");
                 return;
             }
-            if (!targetBlock.isEmpty() && !targetBlock.getType().isAir()) {
-                if (onFailure != null) onFailure.accept("target not empty");
-                return;
+            if (isSpawnEgg(held)) {
+                if (!targetBlock.isEmpty() && !targetBlock.getType().isAir()) {
+                    if (onFailure != null) onFailure.accept("target not empty");
+                    return;
+                }
+                var spawned = spawnFromEgg(held, targetBlock.getLocation().add(0.5, 0, 0.5));
+                if (spawned == null) {
+                    if (onFailure != null) onFailure.accept("spawn failed");
+                    return;
+                }
+            } else {
+                if (!held.getType().isBlock()) {
+                    if (onFailure != null) onFailure.accept("active slot has no block");
+                    return;
+                }
+                if (!targetBlock.isEmpty() && !targetBlock.getType().isAir()) {
+                    if (onFailure != null) onFailure.accept("target not empty");
+                    return;
+                }
+                targetBlock.setType(held.getType(), false);
             }
-            targetBlock.setType(held.getType(), false);
             var newAmount = held.getAmount() - 1;
             inventory.slots[inventory.activeSlot] = newAmount > 0 ? new ItemStack(held.getType(), newAmount) : null;
             applyActiveSlotToStand(stand, inventory);
