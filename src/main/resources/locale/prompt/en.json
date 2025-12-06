@@ -1,0 +1,9 @@
+{
+  "key": "en",
+  "prompt": "[twbridge] Use the agent?",
+  "yes": "[Yes]",
+  "no": "[No]",
+  "hover": "Click to open",
+  "clickHint": "Press \"t\" or \"/\" before clicking the link.",
+  "adblockHint": "If blocks do not appear, try disabling your browser ad-blocker."
+}
