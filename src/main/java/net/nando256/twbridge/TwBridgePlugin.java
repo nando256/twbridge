@@ -62,12 +62,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private int magicTokenTtlSeconds;
     private String magicLinkBaseUrl;
     private String magicLinkExtensionTemplate;
-    private String advertisedWsUrl;
-    private String advertiseHost;
     private String wsBindAddress;
     private int wsPort;
-    private int advertisePort;
-    private String advertiseScheme;
     private boolean httpEnabled;
     private String httpBindAddress;
     private int httpPort;
@@ -113,8 +109,6 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         );
         wsBindAddress = wsAddr;
         wsPort = getConfig().getInt("ws.port", 8787);
-        advertisePort = getConfig().getInt("ws.advertisePort", wsPort);
-        advertiseScheme = sanitizeScheme(getConfig().getString("ws.advertiseScheme"));
         int rate = getConfig().getInt("ws.maxMsgPerSecond", 30);
         int maxBytes = getConfig().getInt("ws.maxMsgBytes", 8192);
         var origins = new java.util.HashSet<>(getConfig().getStringList("ws.originWhitelist"));
@@ -123,8 +117,6 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             getConfig().getBoolean("pairing.enabled", true)
         );
         int pairWindowSec = getConfig().getInt("pairing.windowSeconds", 60);
-        advertiseHost = firstNonBlank(getConfig().getString("ws.advertiseAddress"));
-        advertisedWsUrl = buildWsDefaultUrl(resolveAdvertisedHost(null), advertisePort, advertiseScheme);
         httpEnabled = getConfig().getBoolean("http.enabled", true);
         httpBindAddress = firstNonBlank(getConfig().getString("http.bindAddress"), "0.0.0.0");
         httpPort = getConfig().getInt("http.port", 8788);
@@ -309,7 +301,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var extensionUrl = testMode
             ? resolveTestExtensionUrl(httpHost)
             : resolveExtensionUrl(lang, httpHost);
-        var wsUrl = buildWsDefaultUrl(hostForPlayer, advertisePort, advertiseScheme);
+        var wsUrl = buildWsDefaultUrl(hostForPlayer, wsPort, "ws");
         if (!httpEnabled) {
             getLogger().warning("HTTP server disabled; cannot create magic link.");
             return null;
@@ -391,8 +383,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveAdvertisedHost(Player player) {
-        // Explicit configuration (advertiseAddress or bindAddress) wins unless it is a wildcard/loopback.
-        if (isUsableSpecificHost(advertiseHost)) return advertiseHost.trim();
+        // Explicit bindAddress wins unless it is a wildcard/loopback.
         if (isUsableSpecificHost(wsBindAddress)) return wsBindAddress.trim();
 
         // Prefer the exact local interface used to reach the player's remote address,
@@ -420,13 +411,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     /**
      * Advertised host for HTTP links.
-     * - advertiseAddress has priority.
-     * - If not set, prefer the interface used for the player connection or a subnet match.
+     * - Prefer the interface used for the player connection or a subnet match.
      * - Never prefer ws.bindAddress here, so that HTTP can still follow the client's route when ws.bindAddress is fixed.
      */
     private String resolveHttpAdvertisedHost(Player player) {
-        if (isUsableSpecificHost(advertiseHost)) return advertiseHost.trim();
-
         if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
             var localFromChannel = localAddressFromPlayer(player);
             if (localFromChannel != null && !localFromChannel.isBlank()) return localFromChannel;
@@ -584,13 +572,6 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private static String escapeJson(String raw) {
         if (raw == null) return "";
         return raw.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private static String sanitizeScheme(String raw) {
-        if (raw == null || raw.isBlank()) return "ws";
-        var lower = raw.trim().toLowerCase(Locale.ROOT);
-        if (lower.equals("wss")) return "wss";
-        return "ws";
     }
 
     private static String encodeComponent(String value) {
