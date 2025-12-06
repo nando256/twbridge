@@ -589,7 +589,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             EntityType type = null;
             var meta = egg.getItemMeta();
             if (meta instanceof SpawnEggMeta sem) {
-                type = sem.getSpawnedType();
+                type = sem.getCustomSpawnedType().orElse(null);
             }
             if (type == null) {
                 var mat = egg.getType();
