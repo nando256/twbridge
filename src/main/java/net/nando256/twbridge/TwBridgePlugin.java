@@ -589,7 +589,15 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             EntityType type = null;
             var meta = egg.getItemMeta();
             if (meta instanceof SpawnEggMeta sem) {
-                type = sem.getCustomSpawnedType().orElse(null);
+                try {
+                    // Paper >=1.20: getCustomSpawnedType (nullable)
+                    var method = sem.getClass().getMethod("getCustomSpawnedType");
+                    var res = method.invoke(sem);
+                    if (res instanceof EntityType t) type = t;
+                } catch (Exception ignored) {
+                    // Fallback to deprecated API for older versions
+                    try { type = sem.getSpawnedType(); } catch (Exception ignored2) {}
+                }
             }
             if (type == null) {
                 var mat = egg.getType();
