@@ -227,9 +227,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             prefix.addExtra(no);
             player.spigot().sendMessage(prefix);
             player.sendMessage(ChatColor.GRAY + "クリックするには「t」か「/」を押してからクリックしてください。");
+            player.sendMessage(ChatColor.GRAY + "コードブロックが表示されない場合は、ブラウザの広告ブロック機能を無効にしてみてください。");
         } catch (Exception e) {
             player.sendMessage(ChatColor.AQUA + "[twbridge] " + ChatColor.GREEN + "エージェントを使いますか？ " + ChatColor.UNDERLINE + link);
             player.sendMessage(ChatColor.GRAY + "クリックするには「t」か「/」を押してからクリックしてください。");
+            player.sendMessage(ChatColor.GRAY + "コードブロックが表示されない場合は、ブラウザの広告ブロック機能を無効にしてみてください。");
         }
     }
 
