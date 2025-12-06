@@ -29,6 +29,8 @@ import net.md_5.bungee.api.chat.ComponentBuilder;
 import net.md_5.bungee.api.chat.HoverEvent;
 import net.md_5.bungee.api.chat.TextComponent;
 
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -312,6 +314,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         // Prefer the exact local interface used to reach the player's remote address,
         // then fall back to a subnet match (e.g., same /24).
         if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
+            var localFromChannel = localAddressFromPlayer(player);
+            if (localFromChannel != null && !localFromChannel.isBlank()) return localFromChannel;
             var remoteHost = player.getAddress().getAddress().getHostAddress();
             var routed = localAddressForRemote(remoteHost);
             if (routed != null && !routed.isBlank()) return routed;
@@ -1083,6 +1087,52 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var ownerPart = ownerName == null ? "" : ownerName.trim().toLowerCase(Locale.ROOT);
         var agentPart = agentId == null ? "" : agentId.trim();
         return ownerPart + "." + agentPart;
+    }
+
+    private String localAddressFromPlayer(Player player) {
+        if (player == null) return null;
+        try {
+            var handle = player.getClass().getMethod("getHandle").invoke(player);
+            if (handle == null) return null;
+            var connection = readField(handle, "playerConnection", "connection");
+            if (connection == null) return null;
+            var networkManager = readField(connection, "networkManager", "connection");
+            if (networkManager == null) return null;
+            // networkManager.channel.localAddress()
+            var channel = readField(networkManager, "channel");
+            if (channel == null) return null;
+            var localAddrObj = channel.getClass().getMethod("localAddress").invoke(channel);
+            if (localAddrObj instanceof SocketAddress sa && sa instanceof InetSocketAddress inet) {
+                var addr = inet.getAddress();
+                if (addr != null && !addr.isAnyLocalAddress() && !addr.isLoopbackAddress()) {
+                    var host = addr.getHostAddress();
+                    if (!isAnyAddress(host) && !isLoopbackHost(host)) return host;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private Object readField(Object target, String... names) {
+        if (target == null || names == null) return null;
+        for (var name : names) {
+            if (name == null || name.isBlank()) continue;
+            try {
+                var field = target.getClass().getField(name);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (Exception ignored) {
+                try {
+                    var field = target.getClass().getDeclaredField(name);
+                    field.setAccessible(true);
+                    return field.get(target);
+                } catch (Exception ignored2) {
+                    // try next
+                }
+            }
+        }
+        return null;
     }
 
     private static String firstNonBlank(String... candidates) {
