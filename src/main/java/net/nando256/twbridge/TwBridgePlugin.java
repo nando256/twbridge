@@ -221,8 +221,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var token = issueMagicToken(player == null ? null : player.getName());
         if (token == null) return null;
         var lang = chooseMagicLang(player);
+        var httpHost = resolveHttpHost(player);
         var hostForPlayer = resolveAdvertisedHost(player);
-        var httpHost = firstNonBlank(hostForPlayer, resolveHttpHost(player));
         var extensionUrl = testMode
             ? resolveTestExtensionUrl(httpHost)
             : resolveExtensionUrl(lang, httpHost);
@@ -267,15 +267,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveHttpHost(Player player) {
-        var chosen = isUsableSpecificHost(httpBindAddress)
-            ? httpBindAddress
-            : firstNonBlank(
-                advertiseHost,
-                resolveAdvertisedHost(player),
-                wsBindAddress,
-                httpBindAddress
-            );
-        return ensureHost(chosen);
+        if (isUsableSpecificHost(httpBindAddress)) return ensureHost(httpBindAddress);
+        // When bind address is 0.0.0.0 or blank, reuse advertised host logic.
+        return ensureHost(resolveAdvertisedHost(player));
     }
 
     private String issueMagicToken(String playerName) {
