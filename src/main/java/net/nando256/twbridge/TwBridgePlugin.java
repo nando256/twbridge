@@ -71,6 +71,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String httpBindAddress;
     private int httpPort;
     private String defaultLang;
+    private String promptLangDefault = "en";
     private String defaultBranch;
     private String blockChoicesJson;
     private Map<String, byte[]> staticOverrides = Map.of();
@@ -211,27 +212,42 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private void sendMagicPrompt(Player player, String link) {
+        var lang = sanitizeLang(player == null ? null : player.getLocale(), promptLangDefault);
+        boolean isJa = lang.startsWith("ja");
         try {
-            var prefix = new TextComponent("[twbridge] エージェントを使いますか？ ");
+            var prefix = new TextComponent(isJa ? "[twbridge] エージェントを使いますか？ " : "[twbridge] Use the agent?");
             prefix.setColor(net.md_5.bungee.api.ChatColor.AQUA);
-            var yes = new TextComponent("[はい]");
+            var yes = new TextComponent(isJa ? "[はい]" : "[Yes]");
             yes.setColor(net.md_5.bungee.api.ChatColor.GREEN);
             yes.setBold(true);
             yes.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, link));
-            yes.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder("クリックで開く").create()));
+            yes.setHoverEvent(new HoverEvent(
+                HoverEvent.Action.SHOW_TEXT,
+                new ComponentBuilder(isJa ? "クリックで開く" : "Click to open").create()
+            ));
 
-            var no = new TextComponent(" [いいえ]");
+            var no = new TextComponent(isJa ? " [いいえ]" : " [No]");
             no.setColor(net.md_5.bungee.api.ChatColor.GRAY);
 
             prefix.addExtra(yes);
             prefix.addExtra(no);
             player.spigot().sendMessage(prefix);
-            player.sendMessage(ChatColor.GRAY + "クリックするには「t」か「/」を押してからクリックしてください。");
-            player.sendMessage(ChatColor.GRAY + "コードブロックが表示されない場合は、ブラウザの広告ブロック機能を無効にしてみてください。");
+            player.sendMessage(isJa
+                ? ChatColor.GRAY + "クリックするには「t」か「/」を押してからクリックしてください。"
+                : ChatColor.GRAY + "Press \"t\" or \"/\" before clicking the link.");
+            player.sendMessage(isJa
+                ? ChatColor.GRAY + "コードブロックが表示されない場合は、ブラウザの広告ブロック機能を無効にしてみてください。"
+                : ChatColor.GRAY + "If blocks do not appear, try disabling your browser ad-blocker.");
         } catch (Exception e) {
-            player.sendMessage(ChatColor.AQUA + "[twbridge] " + ChatColor.GREEN + "エージェントを使いますか？ " + ChatColor.UNDERLINE + link);
-            player.sendMessage(ChatColor.GRAY + "クリックするには「t」か「/」を押してからクリックしてください。");
-            player.sendMessage(ChatColor.GRAY + "コードブロックが表示されない場合は、ブラウザの広告ブロック機能を無効にしてみてください。");
+            if (isJa) {
+                player.sendMessage(ChatColor.AQUA + "[twbridge] " + ChatColor.GREEN + "エージェントを使いますか？ " + ChatColor.UNDERLINE + link);
+                player.sendMessage(ChatColor.GRAY + "クリックするには「t」か「/」を押してからクリックしてください。");
+                player.sendMessage(ChatColor.GRAY + "コードブロックが表示されない場合は、ブラウザの広告ブロック機能を無効にしてみてください。");
+            } else {
+                player.sendMessage(ChatColor.AQUA + "[twbridge] " + ChatColor.GREEN + "Use the agent? " + ChatColor.UNDERLINE + link);
+                player.sendMessage(ChatColor.GRAY + "Press \"t\" or \"/\" before clicking the link.");
+                player.sendMessage(ChatColor.GRAY + "If blocks do not appear, try disabling your browser ad-blocker.");
+            }
         }
     }
 
