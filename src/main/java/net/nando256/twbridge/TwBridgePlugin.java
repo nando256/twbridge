@@ -238,7 +238,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private void sendMagicPrompt(Player player, String link) {
         var lang = sanitizeLang(player == null ? null : player.getLocale(), promptLangDefault);
-        var locale = promptLocales.getOrDefault(lang, promptLocales.getOrDefault("en", PromptLocale.defaultEn()));
+        var locale = resolvePromptLocale(lang);
         try {
             var prefix = new TextComponent(locale.prompt);
             prefix.setColor(net.md_5.bungee.api.ChatColor.AQUA);
@@ -264,6 +264,16 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             player.sendMessage(ChatColor.GRAY + locale.clickHint);
             player.sendMessage(ChatColor.GRAY + locale.adblockHint);
         }
+    }
+
+    private PromptLocale resolvePromptLocale(String lang) {
+        var normalized = sanitizeLang(lang, promptLangDefault);
+        var exact = promptLocales.get(normalized);
+        if (exact != null) return exact;
+        var base = normalized.contains("-") ? normalized.substring(0, normalized.indexOf('-')) : normalized;
+        var baseLocale = promptLocales.get(base);
+        if (baseLocale != null) return baseLocale;
+        return promptLocales.getOrDefault(promptLangDefault, PromptLocale.defaultEn());
     }
 
     public void handleCommand(String command, Runnable onSuccess, Consumer<String> onFailure) {
