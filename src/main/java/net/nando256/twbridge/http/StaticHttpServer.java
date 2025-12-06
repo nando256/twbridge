@@ -20,14 +20,21 @@ public final class StaticHttpServer {
     private final int port;
     private final String resourceBase;
     private final int cacheSeconds;
+    private final Map<String, byte[]> overrides;
     private HttpServer server;
 
-    public StaticHttpServer(TwBridgePlugin plugin, String address, int port, String resourceBase, int cacheSeconds) {
+    public StaticHttpServer(TwBridgePlugin plugin,
+                            String address,
+                            int port,
+                            String resourceBase,
+                            int cacheSeconds,
+                            Map<String, byte[]> overrides) {
         this.plugin = plugin;
         this.address = (address == null || address.isBlank()) ? "0.0.0.0" : address;
         this.port = port;
         this.resourceBase = resourceBase == null ? "" : resourceBase;
         this.cacheSeconds = cacheSeconds;
+        this.overrides = overrides == null ? Map.of() : overrides;
     }
 
     public void start() throws IOException {
@@ -61,19 +68,13 @@ public final class StaticHttpServer {
                 path = path + "index.html";
             }
             var resourcePath = resourceBase + path;
-            try (InputStream is = plugin.getResource(resourcePath)) {
-                if (is == null) {
+            byte[] bytes = overrides.get(path);
+            try (InputStream is = bytes == null ? plugin.getResource(resourcePath) : null) {
+                if (bytes == null && is == null) {
                     send(exchange, 404, "not found");
                     return;
                 }
-                byte[] bytes = is.readAllBytes();
-                if ("twbridge.js".equals(path)) {
-                    try {
-                        var body = new String(bytes, StandardCharsets.UTF_8);
-                        body = body.replace("__BLOCK_LIST__", plugin.getBlockChoicesJson());
-                        bytes = body.getBytes(StandardCharsets.UTF_8);
-                    } catch (Exception ignored) {}
-                }
+                if (bytes == null) bytes = is.readAllBytes();
                 var headers = exchange.getResponseHeaders();
                 headers.add("Content-Type", contentType(path));
                 headers.add("Cache-Control", "public, max-age=" + cacheSeconds);

@@ -35,6 +35,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -71,6 +72,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String defaultLang;
     private String defaultBranch;
     private String blockChoicesJson;
+    private Map<String, byte[]> staticOverrides = Map.of();
 
     @Override
     public void onEnable() {
@@ -95,6 +97,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         defaultBranch = sanitizeBranchValue(getConfig().getString("magicLink.defaultBranch"), "main");
         magicTokens.clear();
         blockChoicesJson = buildBlockChoicesJson();
+        staticOverrides = prepareStaticOverrides();
 
         String wsAddr = firstNonBlank(
             getConfig().getString("ws.bindAddress"),
@@ -133,7 +136,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if (httpEnabled) {
             int cacheSeconds = Math.max(0, getConfig().getInt("http.cacheSeconds", 300));
             try {
-                httpServer = new StaticHttpServer(this, httpBindAddress, httpPort, "turbowarp/", cacheSeconds);
+                httpServer = new StaticHttpServer(this, httpBindAddress, httpPort, "turbowarp/", cacheSeconds, staticOverrides);
                 httpServer.start();
                 getLogger().info("HTTP: http://" + httpBindAddress + ":" + httpPort + "/");
             } catch (Exception e) {
@@ -435,6 +438,26 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         }
         sb.append("]");
         return sb.toString();
+    }
+
+    private Map<String, byte[]> prepareStaticOverrides() {
+        var map = new HashMap<String, byte[]>();
+        prepareWithBlocks("turbowarp/twbridge.js", map);
+        prepareWithBlocks("turbowarp/twbridge-test.js", map);
+        return map;
+    }
+
+    private void prepareWithBlocks(String resourcePath, Map<String, byte[]> sink) {
+        try (var is = getResource(resourcePath)) {
+            if (is == null) return;
+            var body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            if (body.contains("__BLOCK_LIST__")) {
+                body = body.replace("__BLOCK_LIST__", blockChoicesJson);
+            }
+            sink.put(resourcePath.replace("turbowarp/", ""), body.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            getLogger().warning("Failed to prepare static resource " + resourcePath + ": " + e.getMessage());
+        }
     }
 
     private static String humanizeMaterialName(String key) {
