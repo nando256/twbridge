@@ -1,7 +1,12 @@
 ws:
   bindAddress: "0.0.0.0"
   port: 8787
-  requirePairing: false
+  requirePairing: true
+  requireSession: true
+  allowLegacyPairing: false
+  advertiseAddress: "127.0.0.1"
+  advertisePort: 8787
+  advertiseScheme: "ws"
   maxMsgPerSecond: 30
   maxMsgBytes: 8192
   originWhitelist:
@@ -10,12 +15,13 @@ http:
   enabled: true
   bindAddress: "0.0.0.0"
   port: 8788
-  path: "/tw/twbridge.js"
-  wsAddress: "127.0.0.1"
-  corsAllowOrigins:
-    - "*"
-  cacheSeconds: 60
+  cacheSeconds: 300
 pairing:
-  enabled: false
+  enabled: true
   windowSeconds: 60
+magicLink:
+  enabled: true
+  tokenTtlSeconds: 300
+  defaultLang: "en"
+  defaultBranch: "main"
 debug: false

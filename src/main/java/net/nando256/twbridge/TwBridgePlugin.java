@@ -1,6 +1,6 @@
 package net.nando256.twbridge;
 
-import net.nando256.twbridge.http.TwHttpServer;
+import net.nando256.twbridge.http.StaticHttpServer;
 import net.nando256.twbridge.ws.BridgeServer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -24,9 +24,18 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
+import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.ComponentBuilder;
+import net.md_5.bungee.api.chat.HoverEvent;
+import net.md_5.bungee.api.chat.TextComponent;
 
-import java.util.ArrayList;
-import java.util.Collections;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -39,11 +48,31 @@ import java.util.function.Consumer;
 
 public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private BridgeServer wsServer;
-    private TwHttpServer httpServer;
+    private StaticHttpServer httpServer;
     private final Map<String, AgentEntry> agents = new ConcurrentHashMap<>();
     private final Map<String, AgentInventory> agentInventories = new ConcurrentHashMap<>();
+    private final Map<String, MagicToken> magicTokens = new ConcurrentHashMap<>();
+    private final SecureRandom tokenRng = new SecureRandom();
     private boolean debug;
-    private volatile List<BlockEntry> cachedBlockList;
+    private boolean magicLinkEnabled;
+    private boolean requireSession;
+    private boolean allowLegacyPairing;
+    private int magicTokenTtlSeconds;
+    private String magicLinkBaseUrl;
+    private String magicLinkExtensionTemplate;
+    private String advertisedWsUrl;
+    private String advertiseHost;
+    private String wsBindAddress;
+    private int wsPort;
+    private int advertisePort;
+    private String advertiseScheme;
+    private boolean httpEnabled;
+    private String httpBindAddress;
+    private int httpPort;
+    private String defaultLang;
+    private String defaultBranch;
+    private String blockChoicesJson;
+    private Map<String, byte[]> staticOverrides = Map.of();
 
     @Override
     public void onEnable() {
@@ -60,12 +89,25 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         debug = getConfig().getBoolean("debug", false);
         logDebug("Debug mode enabled");
 
+        magicLinkEnabled = getConfig().getBoolean("magicLink.enabled", true);
+        requireSession = getConfig().getBoolean("ws.requireSession", true);
+        allowLegacyPairing = false; // legacy pairing is no longer exposed
+        magicTokenTtlSeconds = Math.max(30, getConfig().getInt("magicLink.tokenTtlSeconds", 300));
+        defaultLang = sanitizeLang(getConfig().getString("magicLink.defaultLang"), "en");
+        defaultBranch = sanitizeBranchValue(getConfig().getString("magicLink.defaultBranch"), "main");
+        magicTokens.clear();
+        blockChoicesJson = buildBlockChoicesJson();
+        staticOverrides = prepareStaticOverrides();
+
         String wsAddr = firstNonBlank(
             getConfig().getString("ws.bindAddress"),
             getConfig().getString("ws.address"),
             "0.0.0.0"
         );
-        int wsPort = getConfig().getInt("ws.port", 8787);
+        wsBindAddress = wsAddr;
+        wsPort = getConfig().getInt("ws.port", 8787);
+        advertisePort = getConfig().getInt("ws.advertisePort", wsPort);
+        advertiseScheme = sanitizeScheme(getConfig().getString("ws.advertiseScheme"));
         int rate = getConfig().getInt("ws.maxMsgPerSecond", 30);
         int maxBytes = getConfig().getInt("ws.maxMsgBytes", 8192);
         var origins = new java.util.HashSet<>(getConfig().getStringList("ws.originWhitelist"));
@@ -74,15 +116,14 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             getConfig().getBoolean("pairing.enabled", true)
         );
         int pairWindowSec = getConfig().getInt("pairing.windowSeconds", 60);
-        var clientHost = chooseClientHost(
-            getConfig().getString("http.wsAddress"),
-            getConfig().getString("ws.advertiseAddress"),
-            wsAddr
-        );
-        String wsDefaultUrl = buildWsDefaultUrl(clientHost, wsPort);
+        advertiseHost = firstNonBlank(getConfig().getString("ws.advertiseAddress"));
+        advertisedWsUrl = buildWsDefaultUrl(resolveAdvertisedHost(null), advertisePort, advertiseScheme);
+        httpEnabled = getConfig().getBoolean("http.enabled", true);
+        httpBindAddress = firstNonBlank(getConfig().getString("http.bindAddress"), "0.0.0.0");
+        httpPort = getConfig().getInt("http.port", 8788);
 
         try {
-            wsServer = new BridgeServer(this, wsAddr, wsPort, origins, rate, maxBytes, pairingRequired, pairWindowSec);
+            wsServer = new BridgeServer(this, wsAddr, wsPort, origins, rate, maxBytes, pairingRequired, pairWindowSec, requireSession, allowLegacyPairing);
             wsServer.setReuseAddr(true);
             wsServer.start();
             getLogger().info("WS: ws://" + wsAddr + ":" + wsPort);
@@ -92,48 +133,67 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        if (getConfig().getBoolean("http.enabled", true)) {
-            String hAddr = firstNonBlank(
-                getConfig().getString("http.bindAddress"),
-                getConfig().getString("http.address"),
-                "0.0.0.0"
-            );
-            int hPort = getConfig().getInt("http.port", 8788);
-            String hPath = getConfig().getString("http.path", "/tw/twbridge.js");
-            var cors = getConfig().getStringList("http.corsAllowOrigins");
-            int cache = getConfig().getInt("http.cacheSeconds", 60);
+        if (httpEnabled) {
+            int cacheSeconds = Math.max(0, getConfig().getInt("http.cacheSeconds", 300));
             try {
-                httpServer = new TwHttpServer(this, hAddr, hPort, hPath, cors, cache, wsDefaultUrl);
+                httpServer = new StaticHttpServer(this, httpBindAddress, httpPort, "turbowarp/", cacheSeconds, staticOverrides);
                 httpServer.start();
-                getLogger().info("HTTP: http://" + hAddr + ":" + hPort + hPath);
+                getLogger().info("HTTP: http://" + httpBindAddress + ":" + httpPort + "/");
             } catch (Exception e) {
                 getLogger().severe("HTTP Server Failed: " + e.getMessage());
             }
         }
+
     }
 
     private void stopServers() {
         if (httpServer != null) { httpServer.stop(); httpServer = null; }
         if (wsServer != null) { try { wsServer.stop(1000); } catch (Exception ignored) {} wsServer = null; }
         cleanupAgents();
+        magicTokens.clear();
     }
 
     @Override
     public boolean onCommand(CommandSender s, Command c, String l, String[] a) {
-        if (!s.hasPermission("twbridge.admin")) { s.sendMessage("No permission"); return true; }
-        if (a.length == 0) { s.sendMessage("/twbridge reload | pair"); return true; }
-        switch (a[0].toLowerCase(Locale.ROOT)) {
-            case "reload" -> { reloadConfig(); applyConfigAndStart(); s.sendMessage("twbridge reloaded."); }
-            case "pair" -> {
-                if (wsServer == null) { s.sendMessage("WS server not running."); break; }
-                var code = wsServer.rotatePairCode();
-                if (code == null) {
-                    s.sendMessage("Pairing is disabled (ws.requirePairing = false).");
-                } else {
-                    int ttl = getConfig().getInt("pairing.windowSeconds", 60);
-                    s.sendMessage("Pair code: " + code + " (valid " + ttl + "s)");
-                }
-            }
+        var cmdName = c.getName().toLowerCase(Locale.ROOT);
+        if ("tw".equals(cmdName)) {
+            return handleMagicLinkCommand(s, a);
+        }
+        return false;
+    }
+
+    private boolean handleMagicLinkCommand(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("Player only command");
+            return true;
+        }
+        if (!sender.hasPermission("twbridge.link")) {
+            sender.sendMessage("No permission");
+            return true;
+        }
+        if (!magicLinkEnabled) {
+            sender.sendMessage("Magic link is disabled in config");
+            return true;
+        }
+        var firstArg = args != null && args.length > 0 ? args[0] : null;
+        boolean testMode = firstArg != null && firstArg.equalsIgnoreCase("test");
+        var link = buildMagicLink(player, null, testMode);
+        if (link == null || link.isBlank()) {
+            sender.sendMessage("Failed to create link");
+            return true;
+        }
+        try {
+            var clickable = new TextComponent("[twbridge] TurboWarp link: ");
+            clickable.setColor(net.md_5.bungee.api.ChatColor.AQUA);
+            var linkPart = new TextComponent(link);
+            linkPart.setColor(net.md_5.bungee.api.ChatColor.AQUA);
+            linkPart.setUnderlined(true);
+            linkPart.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, link));
+            linkPart.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder("Click to open").create()));
+            clickable.addExtra(linkPart);
+            player.spigot().sendMessage(clickable);
+        } catch (Exception ignored) {
+            player.sendMessage(ChatColor.AQUA + "[twbridge] TurboWarp link: " + ChatColor.UNDERLINE + link);
         }
         return true;
     }
@@ -158,6 +218,280 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 if (onFailure != null) onFailure.accept(e.getMessage());
             }
         });
+    }
+
+    private String buildMagicLink(Player player, String branchOverride, boolean testMode) {
+        var token = issueMagicToken(player == null ? null : player.getName());
+        if (token == null) return null;
+        var lang = chooseMagicLang(player);
+        var httpHost = resolveHttpHost(player);
+        var hostForPlayer = resolveAdvertisedHost(player);
+        var extensionUrl = testMode
+            ? resolveTestExtensionUrl(httpHost)
+            : resolveExtensionUrl(lang, httpHost);
+        var wsUrl = buildWsDefaultUrl(hostForPlayer, advertisePort, advertiseScheme);
+        if (!httpEnabled) {
+            getLogger().warning("HTTP server disabled; cannot create magic link.");
+            return null;
+        }
+        var base = "http://" + httpHost + ":" + httpPort + "/editor.html";
+        var extWithQuery = extensionUrl;
+        if (testMode) {
+            extWithQuery = extensionUrl + (extensionUrl.contains("?") ? "&" : "?") + "lang=" + encodeComponent(lang);
+        } else {
+            extWithQuery = extensionUrl
+                + (extensionUrl.contains("?") ? "&" : "?")
+                + "host=" + encodeComponent(wsUrl)
+                + "&token=" + encodeComponent(token)
+                + "&lang=" + encodeComponent(lang);
+        }
+        var encodedExt = encodeComponent(extWithQuery);
+        if (encodedExt == null) return null;
+        var builder = new StringBuilder(base);
+        builder.append(base.contains("?") ? "&" : "?").append("extension=").append(encodedExt);
+        return builder.toString();
+    }
+
+    private String resolveExtensionUrl(String lang, String httpHost) {
+        return "http://" + httpHost + ":" + httpPort + "/twbridge.js";
+    }
+
+    private String resolveTestExtensionUrl(String httpHost) {
+        return "http://" + httpHost + ":" + httpPort + "/twbridge-test.js";
+    }
+
+    private String ensureHost(String host) {
+        if (host == null || host.isBlank() || isAnyAddress(host) || isLoopbackHost(host)) {
+            var detected = detectLocalIp();
+            if (detected != null && !detected.isBlank()) return detected;
+            return "127.0.0.1";
+        }
+        return host;
+    }
+
+    private String resolveHttpHost(Player player) {
+        if (isUsableSpecificHost(httpBindAddress)) return ensureHost(httpBindAddress);
+        // When bind address is 0.0.0.0 or blank, pick a host based on client route / advertiseAddress,
+        // but do NOT let ws.bindAddress override HTTP host.
+        return ensureHost(resolveHttpAdvertisedHost(player));
+    }
+
+    private String issueMagicToken(String playerName) {
+        if (playerName == null || playerName.isBlank()) return null;
+        purgeExpiredTokens();
+        byte[] buf = new byte[24];
+        tokenRng.nextBytes(buf);
+        var token = Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
+        long expires = System.currentTimeMillis() + (long) magicTokenTtlSeconds * 1000L;
+        magicTokens.put(token, new MagicToken(playerName, expires));
+        return token;
+    }
+
+    public String consumeMagicToken(String token) {
+        if (token == null || token.isBlank()) return null;
+        purgeExpiredTokens();
+        var entry = magicTokens.remove(token);
+        if (entry == null) return null;
+        if (entry.expiresAt() < System.currentTimeMillis()) return null;
+        return entry.player();
+    }
+
+    private void purgeExpiredTokens() {
+        long now = System.currentTimeMillis();
+        magicTokens.entrySet().removeIf(e -> e.getValue() == null || e.getValue().expiresAt() < now);
+    }
+
+    private String chooseMagicLang(Player player) {
+        var requested = sanitizeLang(player == null ? null : player.getLocale(), defaultLang);
+        if (hasLocaleForLang(requested)) return requested;
+        var base = requested.contains("-") ? requested.substring(0, requested.indexOf('-')) : requested;
+        if (hasLocaleForLang(base)) return base;
+        if (hasLocaleForLang(defaultLang)) return defaultLang;
+        return "en";
+    }
+
+    private String resolveAdvertisedHost(Player player) {
+        // Explicit configuration (advertiseAddress or bindAddress) wins unless it is a wildcard/loopback.
+        if (isUsableSpecificHost(advertiseHost)) return advertiseHost.trim();
+        if (isUsableSpecificHost(wsBindAddress)) return wsBindAddress.trim();
+
+        // Prefer the exact local interface used to reach the player's remote address,
+        // then fall back to a subnet match (e.g., same /24).
+        if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
+            var localFromChannel = localAddressFromPlayer(player);
+            if (localFromChannel != null && !localFromChannel.isBlank()) return localFromChannel;
+            var remoteHost = player.getAddress().getAddress().getHostAddress();
+            var routed = localAddressForRemote(remoteHost);
+            if (routed != null && !routed.isBlank()) return routed;
+            var matched = findLocalForRemote(remoteHost);
+            if (matched != null && !matched.isBlank()) return matched;
+        }
+
+        var serverIp = getServer() == null ? null : getServer().getIp();
+        if (serverIp != null && !serverIp.isBlank() && !isAnyAddress(serverIp) && !isLoopbackHost(serverIp)) {
+            return serverIp.trim();
+        }
+
+        var detected = detectLocalIp();
+        if (detected != null && !detected.isBlank() && !isLoopbackHost(detected) && !isAnyAddress(detected)) return detected;
+
+        return "127.0.0.1";
+    }
+
+    /**
+     * Advertised host for HTTP links.
+     * - advertiseAddress has priority.
+     * - If not set, prefer the interface used for the player connection or a subnet match.
+     * - Never prefer ws.bindAddress here, so that HTTP can still follow the client's route when ws.bindAddress is fixed.
+     */
+    private String resolveHttpAdvertisedHost(Player player) {
+        if (isUsableSpecificHost(advertiseHost)) return advertiseHost.trim();
+
+        if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
+            var localFromChannel = localAddressFromPlayer(player);
+            if (localFromChannel != null && !localFromChannel.isBlank()) return localFromChannel;
+            var remoteHost = player.getAddress().getAddress().getHostAddress();
+            var routed = localAddressForRemote(remoteHost);
+            if (routed != null && !routed.isBlank()) return routed;
+            var matched = findLocalForRemote(remoteHost);
+            if (matched != null && !matched.isBlank()) return matched;
+        }
+
+        var serverIp = getServer() == null ? null : getServer().getIp();
+        if (serverIp != null && !serverIp.isBlank() && !isAnyAddress(serverIp) && !isLoopbackHost(serverIp)) {
+            return serverIp.trim();
+        }
+
+        var detected = detectLocalIp();
+        if (detected != null && !detected.isBlank() && !isLoopbackHost(detected) && !isAnyAddress(detected)) return detected;
+
+        return "127.0.0.1";
+    }
+
+    private String findLocalForRemote(String remoteHost) {
+        if (remoteHost == null || remoteHost.isBlank()) return null;
+        try {
+            var remote = java.net.InetAddress.getByName(remoteHost.trim());
+            if (!(remote instanceof java.net.Inet4Address remote4)) return null;
+            int remoteInt = java.nio.ByteBuffer.wrap(remote4.getAddress()).getInt();
+            int mask = 0xFFFFFF00; // /24 subnet match
+            java.util.Enumeration<java.net.NetworkInterface> ifaces = java.net.NetworkInterface.getNetworkInterfaces();
+            while (ifaces != null && ifaces.hasMoreElements()) {
+                var iface = ifaces.nextElement();
+                if (iface == null || !iface.isUp() || iface.isLoopback()) continue;
+                var addrs = iface.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    var addr = addrs.nextElement();
+                    if (!(addr instanceof java.net.Inet4Address local4)) continue;
+                    if (local4.isLoopbackAddress() || local4.isAnyLocalAddress()) continue;
+                    if (local4.isLinkLocalAddress()) continue;
+                    int localInt = java.nio.ByteBuffer.wrap(local4.getAddress()).getInt();
+                    if ((localInt & mask) == (remoteInt & mask)) {
+                        return local4.getHostAddress();
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private boolean hasLocaleForLang(String lang) {
+        if (lang == null || lang.isBlank()) return false;
+        var path = "turbowarp/locale/" + lang + ".json";
+        try (var ignored = getResource(path)) {
+            return ignored != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static String sanitizeBranchValue(String raw, String fallback) {
+        var fb = (fallback == null || fallback.isBlank()) ? "main" : fallback.trim();
+        if (raw == null) return fb;
+        var normalized = raw.trim();
+        if (normalized.isBlank() || normalized.length() > 48) return fb;
+        if (!normalized.matches("[A-Za-z0-9._-]{1,48}")) return fb;
+        return normalized;
+    }
+
+    public String getBlockChoicesJson() {
+        if (blockChoicesJson != null && !blockChoicesJson.isBlank()) return blockChoicesJson;
+        return "[[\"stone\",\"stone\"],[\"dirt\",\"dirt\"],[\"cobblestone\",\"cobblestone\"]]";
+    }
+
+    private String buildBlockChoicesJson() {
+        var sb = new StringBuilder();
+        sb.append("[");
+        boolean first = true;
+        for (var material : Material.values()) {
+            if (!material.isBlock()) continue;
+            if (!material.isItem()) continue;
+            if (material.isAir()) continue;
+            var id = material.getKey().getKey();
+            var name = humanizeMaterialName(id);
+            if (!first) sb.append(",");
+            sb.append("[\"").append(escapeJson(name)).append("\",\"").append(escapeJson(id)).append("\"]");
+            first = false;
+        }
+        if (first) {
+            sb.append("[\"stone\",\"stone\"],[\"dirt\",\"dirt\"],[\"cobblestone\",\"cobblestone\"]");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private Map<String, byte[]> prepareStaticOverrides() {
+        var map = new HashMap<String, byte[]>();
+        prepareWithBlocks("turbowarp/twbridge.js", map);
+        prepareWithBlocks("turbowarp/twbridge-test.js", map);
+        return map;
+    }
+
+    private void prepareWithBlocks(String resourcePath, Map<String, byte[]> sink) {
+        try (var is = getResource(resourcePath)) {
+            if (is == null) return;
+            var body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            if (body.contains("__BLOCK_LIST__")) {
+                body = body.replace("__BLOCK_LIST__", blockChoicesJson);
+            }
+            sink.put(resourcePath.replace("turbowarp/", ""), body.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            getLogger().warning("Failed to prepare static resource " + resourcePath + ": " + e.getMessage());
+        }
+    }
+
+    private static String humanizeMaterialName(String key) {
+        if (key == null || key.isBlank()) return "";
+        var parts = key.split("_");
+        var builder = new StringBuilder();
+        for (var part : parts) {
+            if (part.isBlank()) continue;
+            if (builder.length() > 0) builder.append(' ');
+            builder.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) builder.append(part.substring(1));
+        }
+        return builder.toString();
+    }
+
+    private static String escapeJson(String raw) {
+        if (raw == null) return "";
+        return raw.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private static String sanitizeScheme(String raw) {
+        if (raw == null || raw.isBlank()) return "ws";
+        var lower = raw.trim().toLowerCase(Locale.ROOT);
+        if (lower.equals("wss")) return "wss";
+        return "ws";
+    }
+
+    private static String encodeComponent(String value) {
+        if (value == null) return null;
+        try {
+            return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     public void handleAgentTeleportToPlayer(String agentId,
@@ -191,6 +525,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 logDebug("Teleporting existing agent " + agentId);
                 stand.teleport(target);
             }
+            resetFacingForward(stand);
             applyActiveSlotToStand(stand, inventory);
             if (onSuccess != null) onSuccess.run();
         });
@@ -243,6 +578,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             }
             animateAgentMove(stand);
             stand.teleport(target);
+            resetFacingForward(stand);
             if (onSuccess != null) onSuccess.run();
         });
     }
@@ -278,6 +614,75 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             var loc = stand.getLocation();
             float newYaw = normalizeYaw(loc.getYaw() + delta);
             stand.teleport(new Location(loc.getWorld(), loc.getX(), loc.getY(), loc.getZ(), newYaw, loc.getPitch()));
+            resetFacingForward(stand);
+            if (onSuccess != null) onSuccess.run();
+        });
+    }
+
+    public void handleAgentFacePlayer(String agentId,
+                                      String ownerName,
+                                      String targetPlayerName,
+                                      Runnable onSuccess,
+                                      Consumer<String> onFailure) {
+        runSync(() -> {
+            var agentKey = agentMapKey(ownerName, agentId);
+            var entry = agents.get(agentKey);
+            if (entry == null) {
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            if (!entry.owner().equalsIgnoreCase(ownerName)) {
+                if (onFailure != null) onFailure.accept("agent owned by another player");
+                return;
+            }
+            var stand = getAgentEntity(entry.entityId());
+            if (stand == null) {
+                agents.remove(agentKey);
+                if (onFailure != null) onFailure.accept("agent not found");
+                return;
+            }
+            var targetName = targetPlayerName == null ? "" : targetPlayerName.trim();
+            if (targetName.isEmpty()) {
+                if (onFailure != null) onFailure.accept("target player required");
+                return;
+            }
+            var targetPlayer = resolvePlayer(targetName);
+            if (targetPlayer == null) {
+                if (onFailure != null) onFailure.accept("target player not found");
+                return;
+            }
+            var standLoc = stand.getLocation();
+            var targetLoc = targetPlayer.getLocation();
+            var standWorld = standLoc.getWorld();
+            var targetWorld = targetLoc.getWorld();
+            if (standWorld == null || targetWorld == null || !standWorld.equals(targetWorld)) {
+                if (onFailure != null) onFailure.accept("player not in same world");
+                return;
+            }
+            var standEyeY = standLoc.getY() + stand.getEyeHeight();
+            var targetEyeY = targetLoc.getY() + targetPlayer.getEyeHeight();
+            double dx = targetLoc.getX() - standLoc.getX();
+            double dz = targetLoc.getZ() - standLoc.getZ();
+            double dy = targetEyeY - standEyeY;
+            double horiz = Math.sqrt(dx * dx + dz * dz);
+            float yaw = horiz < 1.0E-4
+                ? standLoc.getYaw()
+                : normalizeYaw((float) Math.toDegrees(Math.atan2(-dx, dz)));
+            float pitch;
+            if (horiz < 1.0E-4) {
+                if (Math.abs(dy) < 1.0E-4) {
+                    pitch = standLoc.getPitch();
+                } else {
+                    pitch = dy > 0 ? -90f : 90f;
+                }
+            } else {
+                pitch = (float) Math.toDegrees(-Math.atan2(dy, horiz));
+            }
+            if (pitch < -90f) pitch = -90f;
+            if (pitch > 90f) pitch = 90f;
+            stand.teleport(new Location(standWorld, standLoc.getX(), standLoc.getY(), standLoc.getZ(), yaw, pitch));
+            var slightTilt = new EulerAngle(Math.toRadians(-10), 0, 0);
+            stand.setHeadPose(slightTilt);
             if (onSuccess != null) onSuccess.run();
         });
     }
@@ -457,19 +862,6 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return resolved.get();
     }
 
-    public List<BlockEntry> getAvailableBlocks() {
-        var cached = cachedBlockList;
-        if (cached != null) return cached;
-        synchronized (this) {
-            cached = cachedBlockList;
-            if (cached == null) {
-                cached = computeBlockList();
-                cachedBlockList = cached;
-            }
-        }
-        return cached;
-    }
-
     private void cleanupAgents() {
         if (agents.isEmpty()) return;
         runSync(() -> {
@@ -641,6 +1033,14 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         }.runTaskTimer(this, 0L, 2L);
     }
 
+    private void resetFacingForward(ArmorStand stand) {
+        if (stand == null) return;
+        var loc = stand.getLocation();
+        if (loc == null || loc.getWorld() == null) return;
+        stand.teleport(new Location(loc.getWorld(), loc.getX(), loc.getY(), loc.getZ(), loc.getYaw(), 0f));
+        stand.setHeadPose(new EulerAngle(0, 0, 0));
+    }
+
     private Location normalizeAgentTarget(Location raw, Location reference) {
         if (raw == null || raw.getWorld() == null) return raw;
         double x = Math.floor(raw.getX()) + 0.5;
@@ -656,6 +1056,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private Vector resolveDirectionVector(Location origin, String direction) {
         if (origin == null) return null;
+        if (direction == null) return null;
+        var dirTrim = direction.trim().toLowerCase(Locale.ROOT);
+        if (dirTrim.equals("up")) return new Vector(0, 1, 0);
+        if (dirTrim.equals("down")) return new Vector(0, -1, 0);
         var forward = origin.getDirection();
         if (forward == null || forward.lengthSquared() < 1.0E-4) {
             forward = new Vector(0, 0, 1);
@@ -672,7 +1076,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         } else {
             right.normalize();
         }
-        return switch (direction) {
+        return switch (dirTrim) {
             case "forward" -> forward;
             case "back" -> forward.clone().multiply(-1);
             case "right" -> right;
@@ -694,7 +1098,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String normalizeDirection(String direction) {
         if (direction == null) return null;
         return switch (direction.trim().toLowerCase(Locale.ROOT)) {
-            case "forward", "back", "right", "left" -> direction.trim().toLowerCase(Locale.ROOT);
+            case "forward", "back", "right", "left", "up", "down" -> direction.trim().toLowerCase(Locale.ROOT);
             default -> null;
         };
     }
@@ -732,11 +1136,82 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return ownerPart + "." + agentPart;
     }
 
+    private String localAddressFromPlayer(Player player) {
+        if (player == null) return null;
+        try {
+            var handle = player.getClass().getMethod("getHandle").invoke(player);
+            if (handle == null) return null;
+            var connection = readField(handle, "playerConnection", "connection");
+            if (connection == null) return null;
+            var networkManager = readField(connection, "networkManager", "connection");
+            if (networkManager == null) return null;
+            // networkManager.channel.localAddress()
+            var channel = readField(networkManager, "channel");
+            if (channel == null) return null;
+            var localAddrObj = channel.getClass().getMethod("localAddress").invoke(channel);
+            if (localAddrObj instanceof SocketAddress sa && sa instanceof InetSocketAddress inet) {
+                var addr = inet.getAddress();
+                if (addr != null && !addr.isAnyLocalAddress() && !addr.isLoopbackAddress()) {
+                    var host = addr.getHostAddress();
+                    if (!isAnyAddress(host) && !isLoopbackHost(host)) return host;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private Object readField(Object target, String... names) {
+        if (target == null || names == null) return null;
+        for (var name : names) {
+            if (name == null || name.isBlank()) continue;
+            try {
+                var field = target.getClass().getField(name);
+                field.setAccessible(true);
+                return field.get(target);
+            } catch (Exception ignored) {
+                try {
+                    var field = target.getClass().getDeclaredField(name);
+                    field.setAccessible(true);
+                    return field.get(target);
+                } catch (Exception ignored2) {
+                    // try next
+                }
+            }
+        }
+        return null;
+    }
+
     private static String firstNonBlank(String... candidates) {
         for (var c : candidates) {
             if (c != null && !c.isBlank()) return c;
         }
         return null;
+    }
+
+    private String localAddressForRemote(String remoteHost) {
+        if (remoteHost == null || remoteHost.isBlank()) return null;
+        try {
+            var remote = new java.net.InetSocketAddress(remoteHost.trim(), 80);
+            try (var socket = new java.net.Socket()) {
+                socket.connect(remote, 500);
+                var local = socket.getLocalAddress();
+                if (local != null && !local.isAnyLocalAddress() && !local.isLoopbackAddress()) {
+                    var host = local.getHostAddress();
+                    if (!isAnyAddress(host) && !isLoopbackHost(host)) return host;
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private static String sanitizeLang(String raw, String fallback) {
+        var fb = (fallback == null || fallback.isBlank()) ? "en" : fallback.trim().toLowerCase(Locale.ROOT);
+        if (raw == null) return fb;
+        var normalized = raw.trim().replace('_', '-').toLowerCase(Locale.ROOT);
+        if (normalized.isBlank() || normalized.length() > 32) return fb;
+        if (!normalized.matches("^[a-z0-9]{2,8}(?:-[a-z0-9]{1,8})*$")) return fb;
+        return normalized;
     }
 
     private static String chooseClientHost(String... candidates) {
@@ -746,7 +1221,43 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             if (isAnyAddress(normalized)) continue;
             return normalized;
         }
-        return "127.0.0.1";
+        var detected = detectLocalIp();
+        return detected == null || detected.isBlank() ? "127.0.0.1" : detected;
+    }
+
+    private boolean isUsableSpecificHost(String host) {
+        return host != null
+            && !host.isBlank()
+            && !isAnyAddress(host)
+            && !isLoopbackHost(host);
+    }
+
+    private static String detectLocalIp() {
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> ifaces = java.net.NetworkInterface.getNetworkInterfaces();
+            java.net.InetAddress firstNonLoopback = null;
+            while (ifaces != null && ifaces.hasMoreElements()) {
+                var iface = ifaces.nextElement();
+                if (iface == null || !iface.isUp() || iface.isLoopback()) continue;
+                var addrs = iface.getInetAddresses();
+                while (addrs.hasMoreElements()) {
+                    var addr = addrs.nextElement();
+                    if (addr.isLoopbackAddress() || addr.isAnyLocalAddress()) continue;
+                    if (addr instanceof java.net.Inet6Address && ((java.net.Inet6Address) addr).isLinkLocalAddress()) continue;
+                    if (addr.isLinkLocalAddress()) continue;
+                    if (addr.isSiteLocalAddress() && addr instanceof java.net.Inet4Address) {
+                        return addr.getHostAddress();
+                    }
+                    if (firstNonLoopback == null) {
+                        firstNonLoopback = addr;
+                    }
+                }
+            }
+            if (firstNonLoopback != null) return firstNonLoopback.getHostAddress();
+            var local = java.net.InetAddress.getLocalHost();
+            if (local != null && !local.isLoopbackAddress() && !local.isAnyLocalAddress()) return local.getHostAddress();
+        } catch (Exception ignored) {}
+        return null;
     }
 
     private static boolean isAnyAddress(String host) {
@@ -757,46 +1268,34 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             || normalized.equals("*");
     }
 
-    private static String buildWsDefaultUrl(String host, int port) {
+    private static boolean isLoopbackHost(String host) {
+        if (host == null) return true;
+        var normalized = host.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("localhost")
+            || normalized.equals("127.0.0.1")
+            || normalized.startsWith("127.")
+            || normalized.equals("::1")
+            || normalized.equals("[::1]");
+    }
+
+    private static String buildWsDefaultUrl(String host, int port, String scheme) {
         var effectiveHost = (host == null || host.isBlank()) ? "127.0.0.1" : host;
         var bracketed = effectiveHost.startsWith("[") && effectiveHost.endsWith("]");
         var needsBrackets = effectiveHost.contains(":") && !bracketed;
         var normalizedHost = needsBrackets ? "[" + effectiveHost + "]" : effectiveHost;
-        return "ws://" + normalizedHost + ":" + port;
-    }
-
-    private List<BlockEntry> computeBlockList() {
-        var list = new ArrayList<BlockEntry>();
-        for (var material : Material.values()) {
-            if (!material.isBlock()) continue;
-            if (!material.isItem()) continue;
-            if (material.isAir()) continue;
-            var key = material.getKey().getKey();
-            list.add(new BlockEntry(key, humanizeMaterialName(key)));
+        var effectiveScheme = (scheme == null || scheme.isBlank()) ? "ws" : scheme.trim().toLowerCase(Locale.ROOT);
+        if (!effectiveScheme.equals("wss") && !effectiveScheme.equals("ws")) {
+            effectiveScheme = "ws";
         }
-        list.sort(java.util.Comparator.comparing(BlockEntry::name));
-        return Collections.unmodifiableList(list);
-    }
-
-    private static String humanizeMaterialName(String key) {
-        if (key == null || key.isBlank()) return "";
-        var parts = key.split("_");
-        var builder = new StringBuilder();
-        for (int i = 0; i < parts.length; i++) {
-            if (parts[i].isBlank()) continue;
-            if (builder.length() > 0) builder.append(' ');
-            builder.append(Character.toUpperCase(parts[i].charAt(0)));
-            if (parts[i].length() > 1) builder.append(parts[i].substring(1));
-        }
-        return builder.toString();
+        return effectiveScheme + "://" + normalizedHost + ":" + port;
     }
 
     private record AgentEntry(UUID entityId, String owner) {}
+
+    private record MagicToken(String player, long expiresAt) {}
 
     private static class AgentInventory {
         final ItemStack[] slots = new ItemStack[27];
         int activeSlot = -1;
     }
-
-    public record BlockEntry(String id, String name) {}
 }

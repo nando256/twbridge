@@ -1,0 +1,14 @@
+This software includes the following third-party open source software.
+
+---
+
+Name: TurboWarp (Scratch GUI)
+License: GPLv3
+Source: https://github.com/TurboWarp/scratch-gui
+Description: The web interface for the code block editor.
+Files located in: src/main/resources/web/
+
+This component is licensed under the GNU General Public License v3.0.
+A copy of the license is included in src/main/resources/web/LICENSE.turbowarp.txt
+
+---

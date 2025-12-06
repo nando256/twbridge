@@ -1,20 +1,68 @@
 (() => {
   const WS_DEFAULT = "ws://127.0.0.1:8787";
+  const TWB_BOOT_CONFIG = (() => {
+    const fromQuery = () => {
+      try {
+        const script = typeof document !== 'undefined' ? document.currentScript : null;
+        if (!script || !script.src) return null;
+        const idx = script.src.indexOf('?');
+        if (idx < 0) return null;
+        const query = script.src.substring(idx + 1);
+        const params = new URLSearchParams(query);
+        return {
+          host: params.get('host') || '',
+          token: params.get('token') || '',
+          lang: params.get('lang') || ''
+        };
+      } catch (e) { return null; }
+    };
+
+    const fromHash = () => {
+      try {
+        const hash = (typeof location !== 'undefined' && location.hash) ? location.hash.replace(/^#/, '') : '';
+        const params = new URLSearchParams(hash);
+        return {
+          host: params.get('host') || '',
+          token: params.get('token') || '',
+          lang: params.get('lang') || ''
+        };
+      } catch (e) { return null; }
+    };
+
+    return fromQuery() || fromHash() || { host: '', token: '', lang: '' };
+  })();
   const TWB_DEFAULT_LANG = "en";
   const TWB_BLOCK_CHOICES = (() => {
-    try { return __TWB_BLOCK_CHOICES__; } catch (e) {
+    try { return __BLOCK_LIST__; } catch (e) {
       return [
-        ["stone","stone"],
-        ["dirt","dirt"],
-        ["cobblestone","cobblestone"]
+        ['stone','stone'],
+        ['dirt','dirt'],
+        ['cobblestone','cobblestone']
       ];
     }
+  })();
+  const TWB_BLOCK_MENU_ITEMS = (() => {
+    try {
+      if (Array.isArray(TWB_BLOCK_CHOICES) && TWB_BLOCK_CHOICES.length > 0) {
+        return TWB_BLOCK_CHOICES.map(entry => {
+          if (Array.isArray(entry) && entry.length >= 2) {
+            return { text: String(entry[0]), value: String(entry[1]) };
+          }
+          return null;
+        }).filter(Boolean);
+      }
+    } catch (e) {}
+    return [
+      { text: 'stone', value: 'stone' },
+      { text: 'dirt', value: 'dirt' },
+      { text: 'cobblestone', value: 'cobblestone' }
+    ];
   })();
 
   const TWB_LOCALES = {
     en: {
       extName: 'Tw Bridge',
-      blockConnect: 'connect ws [URL] with pair code [CODE] as player [PLAYER]',
+      blockConnect: 'reconnect saved link',
       blockDisconnect: 'disconnect ws',
       blockIsConnected: 'connected?',
       blockCurrentPlayer: 'connected player',
@@ -23,6 +71,7 @@
       blockDespawn: 'despawn agent [ID]',
       blockMove: 'move agent [ID] [DIRECTION] [BLOCKS] blocks',
       blockRotate: 'turn agent [ID] [TURN]',
+      blockFacePlayer: 'turn agent [ID] toward player [PLAYER]',
       blockSlotActivate: 'activate agent [ID] slot [SLOT]',
       blockSlotSet: 'set agent [ID] slot [SLOT] to [BLOCK] x [COUNT]',
       blockPlace: 'place from agent [ID] toward [DIR]',
@@ -34,39 +83,52 @@
       dirDown: 'down',
       turnLeft: 'left',
       turnRight: 'right'
-    },
-    ja: {
-      extName: 'Tw Bridge',
-      blockConnect: 'WS [URL] にペアコード [CODE] とプレイヤー [PLAYER] で接続',
-      blockDisconnect: 'WS を切断',
-      blockIsConnected: '接続中？',
-      blockCurrentPlayer: '接続中のプレイヤー',
-      blockRunCommand: 'コマンド [CMD] を実行',
-      blockTeleport: 'エージェント [ID] を自分のプレイヤーへテレポート',
-      blockDespawn: 'エージェント [ID] を消す',
-      blockMove: 'エージェント [ID] を [DIRECTION] に [BLOCKS] ブロック移動',
-      blockRotate: 'エージェント [ID] の向きを [TURN] に変える',
-      blockSlotActivate: 'エージェント [ID] のスロット [SLOT] を有効にする',
-      blockSlotSet: 'エージェント [ID] のスロット [SLOT] に [BLOCK] を [COUNT] 個セット',
-      blockPlace: 'エージェント [ID] に [DIR] へ置かせる',
-      dirForward: '前',
-      dirBack: '後ろ',
-      dirRight: '右',
-      dirLeft: '左',
-      dirUp: '上',
-      dirDown: '下',
-      turnLeft: '左',
-      turnRight: '右'
     }
   };
 
-  const TWB_ACTIVE_LANG = (() => {
-    const normalized = String(TWB_DEFAULT_LANG || '').trim().toLowerCase().replace(/_/g, '-');
-    if (TWB_LOCALES[normalized]) return normalized;
-    const base = normalized.split('-')[0];
-    if (TWB_LOCALES[base]) return base;
+  let TWB_ACTIVE_LANG = 'en';
+
+  function normalizeLang(raw) {
+    const normalized = String(raw || '').trim().toLowerCase().replace(/_/g, '-');
+    if (!normalized) return 'en';
+    return normalized;
+  }
+
+  function scriptBaseUrl() {
+    try {
+      const script = typeof document !== 'undefined' ? document.currentScript : null;
+      if (script && script.src) return script.src;
+    } catch (e) {}
+    try {
+      if (typeof location !== 'undefined' && location.href) return location.href;
+    } catch (e) {}
+    return '';
+  }
+
+  async function loadLocale(lang) {
+    const normalized = normalizeLang(lang);
+    if (normalized === 'en') {
+      TWB_ACTIVE_LANG = 'en';
+      return 'en';
+    }
+    try {
+      const base = scriptBaseUrl();
+      const url = new URL(`./locale/${normalized}.json`, base || undefined);
+      const res = await fetch(url.toString(), { credentials: 'same-origin' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') {
+          TWB_LOCALES[normalized] = { ...TWB_LOCALES.en, ...data };
+          TWB_ACTIVE_LANG = normalized;
+          return normalized;
+        }
+      }
+    } catch (e) {
+      console.warn('[twbridge] locale load failed', e);
+    }
+    TWB_ACTIVE_LANG = 'en';
     return 'en';
-  })();
+  }
 
   function twbText(key) {
     const fallback = TWB_LOCALES.en || {};
@@ -74,30 +136,43 @@
     return (dict && dict[key]) || fallback[key] || key;
   }
 
+  let bridge = null;
+
   class Bridge {
-    constructor() {
+    constructor(bootConfig) {
+      this.boot = bootConfig || { host: '', token: '', lang: '' };
       this.ws = null;
-      this.wsUrl = WS_DEFAULT;
+      this.wsUrl = (this.boot.host && this.boot.host.trim()) || WS_DEFAULT;
       this.sessionId = null;
       this.boundPlayer = null;
-      this.blockChoices = [];
-      this.agentBlockChoicesMenu = () => {
-        if (this.blockChoices && this.blockChoices.length > 0) {
-          return this.blockChoices.map(({ id, name }) => [name, id]);
-        }
-        return [
-          ['stone', 'stone'],
-          ['dirt', 'dirt'],
-          ['cobblestone', 'cobblestone']
-        ];
-      };
+      this.blockChoices = Array.isArray(TWB_BLOCK_CHOICES)
+        ? TWB_BLOCK_CHOICES.map(entry => {
+          if (Array.isArray(entry) && entry.length >= 2) {
+            return { name: String(entry[0]), id: String(entry[1]) };
+          }
+          return null;
+        }).filter(Boolean)
+        : [];
       this.waiters = new Map();
       this.opening = false;
       this.connected = false;
+      this.autoConnecting = false;
+      this._autoConnectFromBoot();
+    }
+
+    agentBlockChoicesMenu() {
+      if (this.blockChoices && this.blockChoices.length > 0) {
+        return this.blockChoices.map(({ id, name }) => [name, id]);
+      }
+      return [
+        ['stone', 'stone'],
+        ['dirt', 'dirt'],
+        ['cobblestone', 'cobblestone']
+      ];
     }
 
     _uuid() {
-      if (crypto && crypto.randomUUID) return crypto.randomUUID();
+      if (typeof crypto !== 'undefined' && crypto && crypto.randomUUID) return crypto.randomUUID();
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
         const r = Math.random() * 16 | 0;
         const v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -145,18 +220,26 @@
       });
     }
 
-    async connectAndPair(url, code, player) {
-      const playerName = String(player || '').trim();
-      if (!playerName) throw new Error('player required');
+    async connectWithToken(url, token) {
+      const trimmedToken = String(token || '').trim();
+      if (!trimmedToken) throw new Error('token required');
       await this._ensureWS(url);
       const res = await this._send({
-        cmd: 'pair.start',
-        code: String(code || '').trim(),
-        player: playerName
+        cmd: 'token.start',
+        token: trimmedToken
       });
-      if (!res.sessionId) throw new Error('pairing failed');
+      if (!res.sessionId) throw new Error('auth failed');
       this.sessionId = res.sessionId;
-      this.boundPlayer = playerName;
+      this.boundPlayer = res.player || '';
+      this.boot.token = trimmedToken;
+      this.boot.host = this.wsUrl;
+    }
+
+    async reconnectSaved() {
+      const url = this.boot.host && this.boot.host.trim();
+      const token = this.boot.token && this.boot.token.trim();
+      if (!url || !token) throw new Error('missing saved link info');
+      await this.connectWithToken(url, token);
     }
 
     disconnect() {
@@ -173,7 +256,7 @@
     }
 
     isConnected() {
-      return this.connected && this.ws && this.ws.readyState === WebSocket.OPEN;
+      return this.connected && this.ws && this.ws.readyState === WebSocket.OPEN && !!this.sessionId;
     }
 
     currentPlayer() {
@@ -182,17 +265,43 @@
 
     setAvailableBlocks(blocks) {
       if (!Array.isArray(blocks)) {
-        this.blockChoices = [];
+        this.blockChoices = this.blockChoices && this.blockChoices.length ? this.blockChoices : [];
         return;
       }
       this.blockChoices = blocks
         .map(block => {
+          if (Array.isArray(block) && block.length >= 2) {
+            const name = String(block[0] || '').trim();
+            const id = String(block[1] || '').trim();
+            if (!id) return null;
+            return { id, name: name || id };
+          }
           const id = String(block.id || '').trim();
           const name = String(block.name || '').trim();
           if (!id) return null;
           return { id, name: name || id };
         })
         .filter(Boolean);
+    }
+
+    async _autoConnectFromBoot() {
+      if (this.autoConnecting) return;
+      if (!this.boot || !this.boot.token) return;
+      this.autoConnecting = true;
+      try {
+        await this.connectWithToken(this.boot.host || this.wsUrl, this.boot.token);
+        await this.fetchBlocksSafe();
+      } catch (e) {
+        console.warn('[twbridge] auto connect failed', e);
+      } finally {
+        this.autoConnecting = false;
+      }
+    }
+
+    async fetchBlocksSafe() {
+      try {
+        this.setAvailableBlocks(TWB_BLOCK_CHOICES);
+      } catch (e) { /* ignore */ }
     }
 
     async runCommand(command) {
@@ -246,6 +355,17 @@
       return this._send({ cmd: 'agent.rotate', agentId: id, direction: turnDir });
     }
 
+    async faceAgentToPlayer(agentId, targetPlayer) {
+      if (!this.sessionId) throw new Error('not connected');
+      if (!this.boundPlayer) throw new Error('player not bound');
+      const id = String(agentId || '').trim();
+      const player = String(targetPlayer || '').trim();
+      if (!id) throw new Error('agent id required');
+      if (!player) throw new Error('target player required');
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) await this._ensureWS();
+      return this._send({ cmd: 'agent.facePlayer', agentId: id, targetPlayer: player });
+    }
+
     async activateAgentSlot(agentId, slot) {
       if (!this.sessionId) throw new Error('not connected');
       if (!this.boundPlayer) throw new Error('player not bound');
@@ -284,8 +404,6 @@
     }
   }
 
-  const bridge = new Bridge();
-
   class TwBridgeExt {
     getInfo() {
       return {
@@ -297,12 +415,7 @@
           {
             opcode: 'connect',
             blockType: Scratch.BlockType.COMMAND,
-            text: twbText('blockConnect'),
-            arguments: {
-              URL: { type: Scratch.ArgumentType.STRING, defaultValue: WS_DEFAULT },
-              CODE:{ type: Scratch.ArgumentType.STRING, defaultValue: '000000' },
-              PLAYER:{ type: Scratch.ArgumentType.STRING, defaultValue: 'Steve' }
-            }
+            text: twbText('blockConnect')
           },
           {
             opcode: 'disconnect',
@@ -371,6 +484,15 @@
             }
           },
           {
+            opcode: 'faceAgentToPlayer',
+            blockType: Scratch.BlockType.COMMAND,
+            text: twbText('blockFacePlayer'),
+            arguments: {
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
+              PLAYER: { type: Scratch.ArgumentType.STRING, defaultValue: '' }
+            }
+          },
+          {
             opcode: 'activateAgentSlot',
             blockType: Scratch.BlockType.COMMAND,
             text: twbText('blockSlotActivate'),
@@ -429,12 +551,7 @@
           },
           agentBlockChoices: {
             acceptReporters: false,
-            items: TWB_BLOCK_CHOICES.map(entry => {
-              if (Array.isArray(entry) && entry.length >= 2) {
-                return { text: String(entry[0]), value: String(entry[1]) };
-              }
-              return null;
-            }).filter(Boolean)
+            items: TWB_BLOCK_MENU_ITEMS
           },
           agentPlaceDirections: {
             acceptReporters: false,
@@ -451,19 +568,13 @@
       };
     }
 
-    async connect(args) {
-      await bridge.connectAndPair(
-        String(args.URL),
-        String(args.CODE),
-        String(args.PLAYER || "")
-      );
-      try {
-        await bridge._ensureWS();
-        const res = await bridge._send({ cmd: 'blocks.list' });
-        if (res && Array.isArray(res.blocks)) {
-          bridge.setAvailableBlocks(res.blocks);
-        }
-      } catch (e) { /* ignore fetch failures */ }
+    agentBlockChoicesMenu() {
+      return TWB_BLOCK_MENU_ITEMS.map(item => [item.text, item.value]);
+    }
+
+    async connect() {
+      await bridge.reconnectSaved();
+      await bridge.fetchBlocksSafe();
     }
     disconnect() { bridge.disconnect(); }
     isConnected() { return bridge.isConnected(); }
@@ -482,6 +593,12 @@
       await bridge.rotateAgent(
         String(args.ID || ""),
         args.TURN || "left"
+      );
+    }
+    async faceAgentToPlayer(args) {
+      await bridge.faceAgentToPlayer(
+        String(args.ID || ""),
+        String(args.PLAYER || "") || bridge.currentPlayer()
       );
     }
     async activateAgentSlot(args) {
@@ -506,5 +623,15 @@
     }
   }
 
-  Scratch.extensions.register(new TwBridgeExt());
+  async function initTwBridge() {
+    await loadLocale(TWB_BOOT_CONFIG.lang || TWB_DEFAULT_LANG);
+    bridge = new Bridge(TWB_BOOT_CONFIG);
+    if (Scratch && Scratch.extensions && typeof Scratch.extensions.register === 'function') {
+      Scratch.extensions.register(new TwBridgeExt());
+    } else {
+      console.error('[twbridge] Scratch.extensions.register not available');
+    }
+  }
+
+  initTwBridge();
 })();

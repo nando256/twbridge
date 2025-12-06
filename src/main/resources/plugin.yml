@@ -5,10 +5,10 @@ api-version: "1.21"
 author: nando256
 softdepend: []
 commands:
-  twbridge:
-    description: Control twbridge
-    permission: twbridge.admin
-    usage: /twbridge <reload|pair>
+  tw:
+    description: Get TurboWarp magic link
+    permission: twbridge.link
+    usage: /tw
 permissions:
-  twbridge.admin:
-    default: op
+  twbridge.link:
+    default: true
