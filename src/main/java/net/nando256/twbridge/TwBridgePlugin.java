@@ -267,12 +267,14 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveHttpHost(Player player) {
-        var chosen = firstNonBlank(
-            advertiseHost,
-            resolveAdvertisedHost(player),
-            httpBindAddress,
-            wsBindAddress
-        );
+        var chosen = isUsableSpecificHost(httpBindAddress)
+            ? httpBindAddress
+            : firstNonBlank(
+                advertiseHost,
+                resolveAdvertisedHost(player),
+                wsBindAddress,
+                httpBindAddress
+            );
         return ensureHost(chosen);
     }
 
@@ -311,6 +313,10 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveAdvertisedHost(Player player) {
+        // Explicit configuration (advertiseAddress or bindAddress) wins unless it is a wildcard/loopback.
+        if (isUsableSpecificHost(advertiseHost)) return advertiseHost.trim();
+        if (isUsableSpecificHost(wsBindAddress)) return wsBindAddress.trim();
+
         // Prefer the exact local interface used to reach the player's remote address,
         // then fall back to a subnet match (e.g., same /24).
         if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
@@ -323,16 +329,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             if (matched != null && !matched.isBlank()) return matched;
         }
 
-        var configured = firstNonBlank(advertiseHost, null);
-        if (configured != null && !isAnyAddress(configured) && !isLoopbackHost(configured)) return configured.trim();
-
         var serverIp = getServer() == null ? null : getServer().getIp();
         if (serverIp != null && !serverIp.isBlank() && !isAnyAddress(serverIp) && !isLoopbackHost(serverIp)) {
             return serverIp.trim();
-        }
-
-        if (wsBindAddress != null && !isAnyAddress(wsBindAddress) && !isLoopbackHost(wsBindAddress)) {
-            return wsBindAddress.trim();
         }
 
         var detected = detectLocalIp();
@@ -1176,6 +1175,13 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         }
         var detected = detectLocalIp();
         return detected == null || detected.isBlank() ? "127.0.0.1" : detected;
+    }
+
+    private boolean isUsableSpecificHost(String host) {
+        return host != null
+            && !host.isBlank()
+            && !isAnyAddress(host)
+            && !isLoopbackHost(host);
     }
 
     private static String detectLocalIp() {
