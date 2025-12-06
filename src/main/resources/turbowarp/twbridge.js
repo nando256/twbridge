@@ -41,6 +41,23 @@
       ];
     }
   })();
+  const TWB_BLOCK_MENU_ITEMS = (() => {
+    try {
+      if (Array.isArray(TWB_BLOCK_CHOICES) && TWB_BLOCK_CHOICES.length > 0) {
+        return TWB_BLOCK_CHOICES.map(entry => {
+          if (Array.isArray(entry) && entry.length >= 2) {
+            return { text: String(entry[0]), value: String(entry[1]) };
+          }
+          return null;
+        }).filter(Boolean);
+      }
+    } catch (e) {}
+    return [
+      { text: 'stone', value: 'stone' },
+      { text: 'dirt', value: 'dirt' },
+      { text: 'cobblestone', value: 'cobblestone' }
+    ];
+  })();
 
   const TWB_LOCALES = {
     en: {
@@ -534,7 +551,7 @@
           },
           agentBlockChoices: {
             acceptReporters: false,
-            items: 'agentBlockChoicesMenu'
+            items: TWB_BLOCK_MENU_ITEMS
           },
           agentPlaceDirections: {
             acceptReporters: false,
@@ -552,7 +569,7 @@
     }
 
     agentBlockChoicesMenu() {
-      return bridge.agentBlockChoicesMenu();
+      return TWB_BLOCK_MENU_ITEMS.map(item => [item.text, item.value]);
     }
 
     async connect() {
