@@ -969,7 +969,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 return;
             }
             if (isSpawnEgg(held)) {
-                if (!targetBlock.isEmpty() && !targetBlock.getType().isAir()) {
+                // Allow spawning in air/liquids; only block if target is a solid block.
+                if (!targetBlock.isEmpty() && targetBlock.getType().isSolid() && !targetBlock.isPassable()) {
                     if (onFailure != null) onFailure.accept("target not empty");
                     return;
                 }
