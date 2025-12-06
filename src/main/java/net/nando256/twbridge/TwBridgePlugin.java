@@ -17,6 +17,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.inventory.meta.SkullMeta;
@@ -24,6 +25,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
+import org.json.JSONObject;
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.ComponentBuilder;
 import net.md_5.bungee.api.chat.HoverEvent;
@@ -70,9 +72,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String httpBindAddress;
     private int httpPort;
     private String defaultLang;
+    private String promptLangDefault = "en";
     private String defaultBranch;
     private String blockChoicesJson;
     private Map<String, byte[]> staticOverrides = Map.of();
+    private Map<String, PromptLocale> promptLocales = Map.of();
 
     @Override
     public void onEnable() {
@@ -98,6 +102,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         magicTokens.clear();
         blockChoicesJson = buildBlockChoicesJson();
         staticOverrides = prepareStaticOverrides();
+        promptLocales = loadPromptLocales();
 
         String wsAddr = firstNonBlank(
             getConfig().getString("ws.bindAddress"),
@@ -162,6 +167,28 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return false;
     }
 
+    private Map<String, PromptLocale> loadPromptLocales() {
+        var map = new HashMap<String, PromptLocale>();
+        map.put("en", PromptLocale.defaultEn());
+        map.put("ja", PromptLocale.defaultJa());
+        loadPromptLocaleFromResource("locale/prompt/en.json", map);
+        loadPromptLocaleFromResource("locale/prompt/ja.json", map);
+        return map;
+    }
+
+    private void loadPromptLocaleFromResource(String path, Map<String, PromptLocale> sink) {
+        try (var is = getResource(path)) {
+            if (is == null) return;
+            var json = new JSONObject(new String(is.readAllBytes(), StandardCharsets.UTF_8));
+            var loc = PromptLocale.fromJson(json);
+            if (loc != null && loc.key != null && !loc.key.isBlank()) {
+                sink.put(loc.key, loc);
+            }
+        } catch (Exception e) {
+            getLogger().warning("Failed to load prompt locale " + path + ": " + e.getMessage());
+        }
+    }
+
     private boolean handleMagicLinkCommand(CommandSender sender, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage("Player only command");
@@ -196,6 +223,57 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             player.sendMessage(ChatColor.AQUA + "[twbridge] TurboWarp link: " + ChatColor.UNDERLINE + link);
         }
         return true;
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        var player = event.getPlayer();
+        if (player == null) return;
+        if (!magicLinkEnabled) return;
+        if (!player.hasPermission("twbridge.link")) return;
+        var link = buildMagicLink(player, null, false);
+        if (link == null || link.isBlank()) return;
+        sendMagicPrompt(player, link);
+    }
+
+    private void sendMagicPrompt(Player player, String link) {
+        var lang = sanitizeLang(player == null ? null : player.getLocale(), promptLangDefault);
+        var locale = resolvePromptLocale(lang);
+        try {
+            var prefix = new TextComponent(locale.prompt);
+            prefix.setColor(net.md_5.bungee.api.ChatColor.AQUA);
+            var yes = new TextComponent(locale.yes);
+            yes.setColor(net.md_5.bungee.api.ChatColor.GREEN);
+            yes.setBold(true);
+            yes.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, link));
+            yes.setHoverEvent(new HoverEvent(
+                HoverEvent.Action.SHOW_TEXT,
+                new ComponentBuilder(locale.hover).create()
+            ));
+
+            var no = new TextComponent(" " + locale.no);
+            no.setColor(net.md_5.bungee.api.ChatColor.GRAY);
+
+            prefix.addExtra(yes);
+            prefix.addExtra(no);
+            player.spigot().sendMessage(prefix);
+            player.sendMessage(ChatColor.GRAY + locale.clickHint);
+            player.sendMessage(ChatColor.GRAY + locale.adblockHint);
+        } catch (Exception e) {
+            player.sendMessage(ChatColor.AQUA + locale.prompt + " " + ChatColor.UNDERLINE + link);
+            player.sendMessage(ChatColor.GRAY + locale.clickHint);
+            player.sendMessage(ChatColor.GRAY + locale.adblockHint);
+        }
+    }
+
+    private PromptLocale resolvePromptLocale(String lang) {
+        var normalized = sanitizeLang(lang, promptLangDefault);
+        var exact = promptLocales.get(normalized);
+        if (exact != null) return exact;
+        var base = normalized.contains("-") ? normalized.substring(0, normalized.indexOf('-')) : normalized;
+        var baseLocale = promptLocales.get(base);
+        if (baseLocale != null) return baseLocale;
+        return promptLocales.getOrDefault(promptLangDefault, PromptLocale.defaultEn());
     }
 
     public void handleCommand(String command, Runnable onSuccess, Consumer<String> onFailure) {
@@ -1230,6 +1308,74 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             && !host.isBlank()
             && !isAnyAddress(host)
             && !isLoopbackHost(host);
+    }
+
+    private static final class PromptLocale {
+        final String key;
+        final String prompt;
+        final String yes;
+        final String no;
+        final String hover;
+        final String clickHint;
+        final String adblockHint;
+
+        PromptLocale(String key,
+                     String prompt,
+                     String yes,
+                     String no,
+                     String hover,
+                     String clickHint,
+                     String adblockHint) {
+            this.key = key;
+            this.prompt = prompt;
+            this.yes = yes;
+            this.no = no;
+            this.hover = hover;
+            this.clickHint = clickHint;
+            this.adblockHint = adblockHint;
+        }
+
+        static PromptLocale defaultEn() {
+            return new PromptLocale(
+                "en",
+                "[twbridge] Use the agent?",
+                "[Yes]",
+                "[No]",
+                "Click to open",
+                "Press \"t\" or \"/\" before clicking the link.",
+                "If blocks do not appear, try disabling your browser ad-blocker."
+            );
+        }
+
+        static PromptLocale defaultJa() {
+            return new PromptLocale(
+                "ja",
+                "[twbridge] エージェントを使いますか？",
+                "[はい]",
+                "[いいえ]",
+                "クリックで開く",
+                "クリックするには「t」か「/」を押してからクリックしてください。",
+                "コードブロックが表示されない場合は、ブラウザの広告ブロック機能を無効にしてみてください。"
+            );
+        }
+
+        static PromptLocale fromJson(JSONObject json) {
+            if (json == null) return null;
+            var key = json.optString("key", "").trim();
+            var base = switch (key) {
+                case "ja" -> defaultJa();
+                default -> defaultEn();
+            };
+            return new PromptLocale(
+                key.isBlank() ? base.key : key,
+                json.optString("prompt", base.prompt),
+                json.optString("yes", base.yes),
+                json.optString("no", base.no),
+                json.optString("hover", base.hover),
+                json.optString("clickHint", base.clickHint),
+                json.optString("adblockHint", base.adblockHint)
+            );
+        }
     }
 
     private static String detectLocalIp() {
