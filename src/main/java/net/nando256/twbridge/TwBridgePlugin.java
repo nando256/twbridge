@@ -578,15 +578,31 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private boolean isSpawnEgg(ItemStack item) {
         if (item == null) return false;
+        var type = item.getType();
+        if (type != null && type.name().toLowerCase(Locale.ROOT).endsWith("_spawn_egg")) return true;
         var meta = item.getItemMeta();
         return meta instanceof SpawnEggMeta;
     }
 
     private org.bukkit.entity.Entity spawnFromEgg(ItemStack egg, Location loc) {
         try {
+            EntityType type = null;
             var meta = egg.getItemMeta();
-            if (!(meta instanceof SpawnEggMeta sem)) return null;
-            EntityType type = sem.getSpawnedType();
+            if (meta instanceof SpawnEggMeta sem) {
+                type = sem.getSpawnedType();
+            }
+            if (type == null) {
+                var mat = egg.getType();
+                if (mat != null) {
+                    var key = mat.getKey().getKey();
+                    if (key.endsWith("_spawn_egg")) {
+                        var base = key.substring(0, key.length() - "_spawn_egg".length()).toUpperCase(Locale.ROOT);
+                        try {
+                            type = EntityType.valueOf(base);
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
             if (type == null) return null;
             var world = loc.getWorld();
             if (world == null) return null;
