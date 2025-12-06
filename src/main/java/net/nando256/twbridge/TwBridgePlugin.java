@@ -75,6 +75,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String promptLangDefault = "en";
     private String defaultBranch;
     private String blockChoicesJson;
+    private String eggChoicesJson;
     private Map<String, byte[]> staticOverrides = Map.of();
     private Map<String, PromptLocale> promptLocales = Map.of();
 
@@ -101,6 +102,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         defaultBranch = sanitizeBranchValue(getConfig().getString("magicLink.defaultBranch"), "main");
         magicTokens.clear();
         blockChoicesJson = buildBlockChoicesJson();
+        eggChoicesJson = buildEggChoicesJson();
         staticOverrides = prepareStaticOverrides();
         promptLocales = loadPromptLocales();
 
@@ -497,6 +499,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return "[[\"stone\",\"stone\"],[\"dirt\",\"dirt\"],[\"cobblestone\",\"cobblestone\"]]";
     }
 
+    public String getEggChoicesJson() {
+        if (eggChoicesJson != null && !eggChoicesJson.isBlank()) return eggChoicesJson;
+        return "[[\"Cow Spawn Egg\",\"cow_spawn_egg\"],[\"Pig Spawn Egg\",\"pig_spawn_egg\"]]";
+    }
+
     private String buildBlockChoicesJson() {
         var sb = new StringBuilder();
         sb.append("[");
@@ -518,6 +525,26 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return sb.toString();
     }
 
+    private String buildEggChoicesJson() {
+        var sb = new StringBuilder();
+        sb.append("[");
+        boolean first = true;
+        for (var material : Material.values()) {
+            if (!material.isItem()) continue;
+            var key = material.getKey().getKey();
+            if (!key.endsWith("_spawn_egg")) continue;
+            var name = humanizeMaterialName(key);
+            if (!first) sb.append(",");
+            sb.append("[\"").append(escapeJson(name)).append("\",\"").append(escapeJson(key)).append("\"]");
+            first = false;
+        }
+        if (first) {
+            sb.append("[\"Cow Spawn Egg\",\"cow_spawn_egg\"],[\"Pig Spawn Egg\",\"pig_spawn_egg\"]");
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
     private Map<String, byte[]> prepareStaticOverrides() {
         var map = new HashMap<String, byte[]>();
         prepareWithBlocks("turbowarp/twbridge.js", map);
@@ -531,6 +558,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             var body = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             if (body.contains("__BLOCK_LIST__")) {
                 body = body.replace("__BLOCK_LIST__", blockChoicesJson);
+            }
+            if (body.contains("__EGG_LIST__")) {
+                body = body.replace("__EGG_LIST__", eggChoicesJson);
             }
             sink.put(resourcePath.replace("turbowarp/", ""), body.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {

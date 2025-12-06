@@ -58,6 +58,30 @@
       { text: 'cobblestone', value: 'cobblestone' }
     ];
   })();
+  const TWB_EGG_CHOICES = (() => {
+    try { return __EGG_LIST__; } catch (e) {
+      return [
+        ['Cow Spawn Egg','cow_spawn_egg'],
+        ['Pig Spawn Egg','pig_spawn_egg']
+      ];
+    }
+  })();
+  const TWB_EGG_MENU_ITEMS = (() => {
+    try {
+      if (Array.isArray(TWB_EGG_CHOICES) && TWB_EGG_CHOICES.length > 0) {
+        return TWB_EGG_CHOICES.map(entry => {
+          if (Array.isArray(entry) && entry.length >= 2) {
+            return { text: String(entry[0]), value: String(entry[1]) };
+          }
+          return null;
+        }).filter(Boolean);
+      }
+    } catch (e) {}
+    return [
+      { text: 'Cow Spawn Egg', value: 'cow_spawn_egg' },
+      { text: 'Pig Spawn Egg', value: 'pig_spawn_egg' }
+    ];
+  })();
 
   const TWB_LOCALES = {
     en: {
@@ -74,6 +98,7 @@
       blockFacePlayer: 'turn agent [ID] toward player [PLAYER]',
       blockSlotActivate: 'activate agent [ID] slot [SLOT]',
       blockSlotSet: 'set agent [ID] slot [SLOT] to [BLOCK] x [COUNT]',
+      blockSlotSetEgg: 'set agent [ID] slot [SLOT] to spawn egg [EGG] x [COUNT]',
       blockPlace: 'place from agent [ID] toward [DIR]',
       dirForward: 'forward',
       dirBack: 'back',
@@ -517,6 +542,21 @@
             }
           },
           {
+            opcode: 'setAgentSlotEgg',
+            blockType: Scratch.BlockType.COMMAND,
+            text: twbText('blockSlotSetEgg'),
+            arguments: {
+              ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'agent1' },
+              EGG: {
+                type: Scratch.ArgumentType.STRING,
+                menu: 'agentEggChoices',
+                defaultValue: 'cow_spawn_egg'
+              },
+              COUNT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 },
+              SLOT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 }
+            }
+          },
+          {
             opcode: 'placeBlock',
             blockType: Scratch.BlockType.COMMAND,
             text: twbText('blockPlace'),
@@ -552,6 +592,10 @@
           agentBlockChoices: {
             acceptReporters: false,
             items: TWB_BLOCK_MENU_ITEMS
+          },
+          agentEggChoices: {
+            acceptReporters: false,
+            items: TWB_EGG_MENU_ITEMS
           },
           agentPlaceDirections: {
             acceptReporters: false,
@@ -611,6 +655,14 @@
       await bridge.setAgentSlotBlock(
         String(args.ID || ""),
         String(args.BLOCK || "stone"),
+        Number(args.COUNT || 1),
+        Number(args.SLOT || 1)
+      );
+    }
+    async setAgentSlotEgg(args) {
+      await bridge.setAgentSlotBlock(
+        String(args.ID || ""),
+        String(args.EGG || "cow_spawn_egg"),
         Number(args.COUNT || 1),
         Number(args.SLOT || 1)
       );
