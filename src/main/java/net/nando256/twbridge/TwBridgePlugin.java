@@ -17,6 +17,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.inventory.meta.SkullMeta;
@@ -196,6 +197,38 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             player.sendMessage(ChatColor.AQUA + "[twbridge] TurboWarp link: " + ChatColor.UNDERLINE + link);
         }
         return true;
+    }
+
+    @EventHandler
+    public void onPlayerJoin(PlayerJoinEvent event) {
+        var player = event.getPlayer();
+        if (player == null) return;
+        if (!magicLinkEnabled) return;
+        if (!player.hasPermission("twbridge.link")) return;
+        var link = buildMagicLink(player, null, false);
+        if (link == null || link.isBlank()) return;
+        sendMagicPrompt(player, link);
+    }
+
+    private void sendMagicPrompt(Player player, String link) {
+        try {
+            var prefix = new TextComponent("[twbridge] エージェントを使いますか？ ");
+            prefix.setColor(net.md_5.bungee.api.ChatColor.AQUA);
+            var yes = new TextComponent("[はい]");
+            yes.setColor(net.md_5.bungee.api.ChatColor.GREEN);
+            yes.setBold(true);
+            yes.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, link));
+            yes.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder("クリックで開く").create()));
+
+            var no = new TextComponent(" [いいえ]");
+            no.setColor(net.md_5.bungee.api.ChatColor.GRAY);
+
+            prefix.addExtra(yes);
+            prefix.addExtra(no);
+            player.spigot().sendMessage(prefix);
+        } catch (Exception e) {
+            player.sendMessage(ChatColor.AQUA + "[twbridge] " + ChatColor.GREEN + "エージェントを使いますか？ " + ChatColor.UNDERLINE + link);
+        }
     }
 
     public void handleCommand(String command, Runnable onSuccess, Consumer<String> onFailure) {
