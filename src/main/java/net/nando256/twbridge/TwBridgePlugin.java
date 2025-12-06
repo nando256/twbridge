@@ -13,6 +13,7 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.EntityType;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
@@ -21,6 +22,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.inventory.meta.SpawnEggMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
@@ -574,6 +576,55 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return raw.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    private boolean isSpawnEgg(ItemStack item) {
+        if (item == null) return false;
+        var type = item.getType();
+        if (type != null && type.name().toLowerCase(Locale.ROOT).endsWith("_spawn_egg")) return true;
+        var meta = item.getItemMeta();
+        return meta instanceof SpawnEggMeta;
+    }
+
+    private org.bukkit.entity.Entity spawnFromEgg(ItemStack egg, Location loc) {
+        try {
+            EntityType type = null;
+            var meta = egg.getItemMeta();
+            if (meta instanceof SpawnEggMeta sem) {
+                try {
+                    // Paper >=1.20: getCustomSpawnedType (nullable)
+                    var method = sem.getClass().getMethod("getCustomSpawnedType");
+                    var res = method.invoke(sem);
+                    if (res instanceof EntityType t) type = t;
+                } catch (Exception ignored) {
+                    // Fallback to legacy API via reflection to avoid compile-time deprecation
+                    try {
+                        var m = sem.getClass().getMethod("getSpawnedType");
+                        var res = m.invoke(sem);
+                        if (res instanceof EntityType t) type = t;
+                    } catch (Exception ignored2) {}
+                }
+            }
+            if (type == null) {
+                var mat = egg.getType();
+                if (mat != null) {
+                    var key = mat.getKey().getKey();
+                    if (key.endsWith("_spawn_egg")) {
+                        var base = key.substring(0, key.length() - "_spawn_egg".length()).toUpperCase(Locale.ROOT);
+                        try {
+                            type = EntityType.valueOf(base);
+                        } catch (Exception ignored) {}
+                    }
+                }
+            }
+            if (type == null) return null;
+            var world = loc.getWorld();
+            if (world == null) return null;
+            return world.spawnEntity(loc, type);
+        } catch (Exception e) {
+            getLogger().warning("Spawn from egg failed: " + e.getMessage());
+            return null;
+        }
+    }
+
     private static String encodeComponent(String value) {
         if (value == null) return null;
         try {
@@ -902,8 +953,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 return;
             }
             var held = inventory.slots[inventory.activeSlot];
-            if (held == null || held.getType() == null || !held.getType().isBlock()) {
-                if (onFailure != null) onFailure.accept("active slot has no block");
+            if (held == null || held.getType() == null) {
+                if (onFailure != null) onFailure.accept("active slot empty");
                 return;
             }
             var targetOffset = resolvePlaceOffset(stand.getLocation(), direction);
@@ -917,11 +968,28 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                 if (onFailure != null) onFailure.accept("invalid target");
                 return;
             }
-            if (!targetBlock.isEmpty() && !targetBlock.getType().isAir()) {
-                if (onFailure != null) onFailure.accept("target not empty");
-                return;
+            if (isSpawnEgg(held)) {
+                // Allow spawning in air/liquids; only block if target is a solid block.
+                if (!targetBlock.isEmpty() && targetBlock.getType().isSolid() && !targetBlock.isPassable()) {
+                    if (onFailure != null) onFailure.accept("target not empty");
+                    return;
+                }
+                var spawned = spawnFromEgg(held, targetBlock.getLocation().add(0.5, 0, 0.5));
+                if (spawned == null) {
+                    if (onFailure != null) onFailure.accept("spawn failed");
+                    return;
+                }
+            } else {
+                if (!held.getType().isBlock()) {
+                    if (onFailure != null) onFailure.accept("active slot has no block");
+                    return;
+                }
+                if (!targetBlock.isEmpty() && !targetBlock.getType().isAir()) {
+                    if (onFailure != null) onFailure.accept("target not empty");
+                    return;
+                }
+                targetBlock.setType(held.getType(), false);
             }
-            targetBlock.setType(held.getType(), false);
             var newAmount = held.getAmount() - 1;
             inventory.slots[inventory.activeSlot] = newAmount > 0 ? new ItemStack(held.getType(), newAmount) : null;
             applyActiveSlotToStand(stand, inventory);
