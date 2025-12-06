@@ -221,11 +221,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var token = issueMagicToken(player == null ? null : player.getName());
         if (token == null) return null;
         var lang = chooseMagicLang(player);
-        var httpHost = resolveHttpHost(player);
+        var hostForPlayer = resolveAdvertisedHost(player);
+        var httpHost = firstNonBlank(hostForPlayer, resolveHttpHost(player));
         var extensionUrl = testMode
             ? resolveTestExtensionUrl(httpHost)
             : resolveExtensionUrl(lang, httpHost);
-        var hostForPlayer = resolveAdvertisedHost(player);
         var wsUrl = buildWsDefaultUrl(hostForPlayer, advertisePort, advertiseScheme);
         if (!httpEnabled) {
             getLogger().warning("HTTP server disabled; cannot create magic link.");
