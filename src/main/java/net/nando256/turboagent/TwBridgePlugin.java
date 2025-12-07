@@ -116,7 +116,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         downloadTurbowarp = getConfig().getBoolean("turbowarp.download.enabled", true);
         turbowarpZipUrl = firstNonBlank(
             getConfig().getString("turbowarp.download.zipUrl"),
-            "https://raw.githubusercontent.com/nando256/TurboAgent/main/turbowarp.zip"
+            "https://github.com/nando256/TurboAgent/releases/download/v3.0.0/www-client.zip"
         );
         forceDownloadOnStart = getConfig().getBoolean("turbowarp.download.forceOnStart", false);
         externalTurbowarpRoot = prepareExternalTurbowarp();
