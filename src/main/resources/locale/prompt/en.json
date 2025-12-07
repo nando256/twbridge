@@ -1,6 +1,6 @@
 {
   "key": "en",
-  "prompt": "[twbridge] Use the agent?",
+  "prompt": "[TurboAgent] Use the agent?",
   "yes": "[Yes]",
   "no": "[No]",
   "hover": "Click to open",

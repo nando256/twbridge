@@ -1,6 +1,6 @@
 {
   "key": "ja",
-  "prompt": "[twbridge] エージェントを使いますか？",
+  "prompt": "[TurboAgent] エージェントを使いますか？",
   "yes": "[はい]",
   "no": "[いいえ]",
   "hover": "クリックで開く",

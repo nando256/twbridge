@@ -1,5 +1,5 @@
 {
-  "extName": "Tw Bridge",
+  "extName": "TurboAgent",
   "blockConnect": "保存されたリンクで再接続",
   "blockDisconnect": "WS を切断",
   "blockIsConnected": "接続中？",

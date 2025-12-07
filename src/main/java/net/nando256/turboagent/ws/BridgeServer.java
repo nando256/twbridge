@@ -1,6 +1,6 @@
-package net.nando256.twbridge.ws;
+package net.nando256.turboagent.ws;
 
-import net.nando256.twbridge.TwBridgePlugin;
+import net.nando256.turboagent.TwBridgePlugin;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
@@ -64,7 +64,7 @@ public class BridgeServer extends WebSocketServer {
         if (!pairingRequired || !allowLegacyPairing) return null;
         this.activePairCode = String.format("%06d", rng.nextInt(1_000_000));
         this.pairExpireAt = System.currentTimeMillis() + pairWindowSeconds * 1000L;
-        plugin.getLogger().info("[twbridge] Pairing code: " + activePairCode + " (valid " + pairWindowSeconds + "s)");
+        plugin.getLogger().info("[TurboAgent] Pairing code: " + activePairCode + " (valid " + pairWindowSeconds + "s)");
         return activePairCode;
     }
 
@@ -79,11 +79,11 @@ public class BridgeServer extends WebSocketServer {
             conn.close(1008, "origin not allowed");
             return;
         }
-        plugin.getLogger().info("[twbridge] WS connected: " + conn.getRemoteSocketAddress());
+        plugin.getLogger().info("[TurboAgent] WS connected: " + conn.getRemoteSocketAddress());
         plugin.logDebug("Connection opened: " + conn.getRemoteSocketAddress());
         counters.put(conn, 0);
         sendJson(conn, new JSONObject()
-            .put("hello", "twbridge")
+            .put("hello", "turboagent")
             .put("pairing", pairingRequired && allowLegacyPairing)
             .put("requireSession", requireSession)
         );
@@ -461,7 +461,7 @@ public class BridgeServer extends WebSocketServer {
 
     @Override
     public void onClose(WebSocket conn, int code, String reason, boolean remote) {
-        plugin.getLogger().info("[twbridge] WS disconnected: " + conn.getRemoteSocketAddress() + " code=" + code + " reason=" + reason);
+        plugin.getLogger().info("[TurboAgent] WS disconnected: " + conn.getRemoteSocketAddress() + " code=" + code + " reason=" + reason);
         counters.remove(conn);
         var session = sessions.remove(conn);
         if (session != null && session.player() != null) {
@@ -473,12 +473,12 @@ public class BridgeServer extends WebSocketServer {
     @Override
     public void onError(WebSocket conn, Exception ex) {
         var message = ex == null ? "unknown" : ex.getMessage();
-        plugin.getLogger().warning("[twbridge] WS error: " + message);
+        plugin.getLogger().warning("[TurboAgent] WS error: " + message);
     }
 
     @Override
     public void onStart() {
-        plugin.getLogger().info("[twbridge] BridgeServer listening on " + getAddress());
+        plugin.getLogger().info("[TurboAgent] BridgeServer listening on " + getAddress());
     }
 
     private boolean bindPlayer(String playerName, WebSocket conn) {

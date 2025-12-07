@@ -1,10 +1,10 @@
-package net.nando256.twbridge.http;
+package net.nando256.turboagent.http;
 
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-import net.nando256.twbridge.TwBridgePlugin;
+import net.nando256.turboagent.TwBridgePlugin;
 
 import java.io.IOException;
 import java.io.InputStream;

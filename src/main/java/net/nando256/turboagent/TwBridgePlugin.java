@@ -1,7 +1,7 @@
-package net.nando256.twbridge;
+package net.nando256.turboagent;
 
-import net.nando256.twbridge.http.StaticHttpServer;
-import net.nando256.twbridge.ws.BridgeServer;
+import net.nando256.turboagent.http.StaticHttpServer;
+import net.nando256.turboagent.ws.BridgeServer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Color;
@@ -27,6 +27,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
+import org.bukkit.Sound;
 import org.json.JSONObject;
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.ComponentBuilder;
@@ -190,7 +191,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             sender.sendMessage("Player only command");
             return true;
         }
-        if (!sender.hasPermission("twbridge.link")) {
+        if (!sender.hasPermission("turboagent.link")) {
             sender.sendMessage("No permission");
             return true;
         }
@@ -206,7 +207,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             return true;
         }
         try {
-            var clickable = new TextComponent("[twbridge] TurboWarp link: ");
+            var clickable = new TextComponent("[TurboAgent] TurboWarp link: ");
             clickable.setColor(net.md_5.bungee.api.ChatColor.AQUA);
             var linkPart = new TextComponent(link);
             linkPart.setColor(net.md_5.bungee.api.ChatColor.AQUA);
@@ -216,7 +217,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             clickable.addExtra(linkPart);
             player.spigot().sendMessage(clickable);
         } catch (Exception ignored) {
-            player.sendMessage(ChatColor.AQUA + "[twbridge] TurboWarp link: " + ChatColor.UNDERLINE + link);
+            player.sendMessage(ChatColor.AQUA + "[TurboAgent] TurboWarp link: " + ChatColor.UNDERLINE + link);
         }
         return true;
     }
@@ -226,7 +227,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var player = event.getPlayer();
         if (player == null) return;
         if (!magicLinkEnabled) return;
-        if (!player.hasPermission("twbridge.link")) return;
+        if (!player.hasPermission("turboagent.link")) return;
         var link = buildMagicLink(player, null, false);
         if (link == null || link.isBlank()) return;
         sendMagicPrompt(player, link);
@@ -327,11 +328,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveExtensionUrl(String lang, String httpHost) {
-        return "http://" + httpHost + ":" + httpPort + "/twbridge.js";
+        return "http://" + httpHost + ":" + httpPort + "/turboagent.js";
     }
 
     private String resolveTestExtensionUrl(String httpHost) {
-        return "http://" + httpHost + ":" + httpPort + "/twbridge-test.js";
+        return "http://" + httpHost + ":" + httpPort + "/turboagent-test.js";
     }
 
     private String ensureHost(String host) {
@@ -537,8 +538,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private Map<String, byte[]> prepareStaticOverrides() {
         var map = new HashMap<String, byte[]>();
-        prepareWithBlocks("turbowarp/twbridge.js", map);
-        prepareWithBlocks("turbowarp/twbridge-test.js", map);
+        prepareWithBlocks("turbowarp/turboagent.js", map);
+        prepareWithBlocks("turbowarp/turboagent-test.js", map);
         return map;
     }
 
@@ -574,6 +575,23 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private static String escapeJson(String raw) {
         if (raw == null) return "";
         return raw.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private void playPlacementSound(Material material, Location loc) {
+        if (material == null || loc == null || loc.getWorld() == null) return;
+        try {
+            var data = material.createBlockData();
+            if (data != null && data.getSoundGroup() != null) {
+                var sg = data.getSoundGroup();
+                var sound = sg.getPlaceSound();
+                if (sound != null) {
+                    loc.getWorld().playSound(loc, sound, sg.getVolume(), sg.getPitch());
+                    return;
+                }
+            }
+        } catch (Exception ignored) {}
+        // Fallback generic sound
+        loc.getWorld().playSound(loc, Sound.BLOCK_STONE_PLACE, 1.0f, 1.0f);
     }
 
     private boolean isSpawnEgg(ItemStack item) {
@@ -989,6 +1007,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                     return;
                 }
                 targetBlock.setType(held.getType(), false);
+                playPlacementSound(held.getType(), targetBlock.getLocation().add(0.5, 0.5, 0.5));
             }
             var newAmount = held.getAmount() - 1;
             inventory.slots[inventory.activeSlot] = newAmount > 0 ? new ItemStack(held.getType(), newAmount) : null;
@@ -1417,7 +1436,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         static PromptLocale defaultEn() {
             return new PromptLocale(
                 "en",
-                "[twbridge] Use the agent?",
+                "[TurboAgent] Use the agent?",
                 "[Yes]",
                 "[No]",
                 "Click to open",
@@ -1429,7 +1448,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         static PromptLocale defaultJa() {
             return new PromptLocale(
                 "ja",
-                "[twbridge] エージェントを使いますか？",
+                "[TurboAgent] エージェントを使いますか？",
                 "[はい]",
                 "[いいえ]",
                 "クリックで開く",

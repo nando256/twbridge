@@ -85,7 +85,7 @@
 
   const TWB_LOCALES = {
     en: {
-      extName: 'Tw Bridge',
+      extName: 'TurboAgent',
       blockConnect: 'reconnect saved link',
       blockDisconnect: 'disconnect ws',
       blockIsConnected: 'connected?',
@@ -149,7 +149,7 @@
         }
       }
     } catch (e) {
-      console.warn('[twbridge] locale load failed', e);
+      console.warn('[turboagent] locale load failed', e);
     }
     TWB_ACTIVE_LANG = 'en';
     return 'en';
@@ -317,7 +317,7 @@
         await this.connectWithToken(this.boot.host || this.wsUrl, this.boot.token);
         await this.fetchBlocksSafe();
       } catch (e) {
-        console.warn('[twbridge] auto connect failed', e);
+        console.warn('[turboagent] auto connect failed', e);
       } finally {
         this.autoConnecting = false;
       }
@@ -432,7 +432,7 @@
   class TwBridgeExt {
     getInfo() {
       return {
-        id: 'twbridge',
+        id: 'turboagent',
         name: twbText('extName'),
         color1: '#4b87ff',
         color2: '#2a5bd7',
@@ -617,8 +617,8 @@
     }
 
     async connect() {
-      await bridge.reconnectSaved();
-      await bridge.fetchBlocksSafe();
+    await bridge.reconnectSaved();
+    await bridge.fetchBlocksSafe();
     }
     disconnect() { bridge.disconnect(); }
     isConnected() { return bridge.isConnected(); }
@@ -681,7 +681,7 @@
     if (Scratch && Scratch.extensions && typeof Scratch.extensions.register === 'function') {
       Scratch.extensions.register(new TwBridgeExt());
     } else {
-      console.error('[twbridge] Scratch.extensions.register not available');
+      console.error('[turboagent] Scratch.extensions.register not available');
     }
   }
 

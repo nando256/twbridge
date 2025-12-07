@@ -1,5 +1,5 @@
-name: twbridge
-main: net.nando256.twbridge.TwBridgePlugin
+name: TurboAgent
+main: net.nando256.turboagent.TwBridgePlugin
 version: ${version}
 api-version: "1.21"
 author: nando256
@@ -7,8 +7,8 @@ softdepend: []
 commands:
   tw:
     description: Get TurboWarp magic link
-    permission: twbridge.link
+    permission: turboagent.link
     usage: /tw
 permissions:
-  twbridge.link:
+  turboagent.link:
     default: true
