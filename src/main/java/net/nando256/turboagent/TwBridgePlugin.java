@@ -116,7 +116,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         downloadTurbowarp = getConfig().getBoolean("turbowarp.download.enabled", true);
         turbowarpZipUrl = firstNonBlank(
             getConfig().getString("turbowarp.download.zipUrl"),
-            "https://codeload.github.com/nando256/TurboAgent/zip/refs/heads/main"
+            "https://raw.githubusercontent.com/nando256/TurboAgent/main/turbowarp.zip"
         );
         forceDownloadOnStart = getConfig().getBoolean("turbowarp.download.forceOnStart", false);
         externalTurbowarpRoot = prepareExternalTurbowarp();
@@ -1160,7 +1160,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private boolean downloadAndExtractTurbowarp(Path targetDir) {
         getLogger().info("Downloading TurboWarp assets from " + turbowarpZipUrl);
         var tmpZip = targetDir.resolveSibling("turbowarp.zip");
-        try (var in = new java.net.URL(turbowarpZipUrl).openStream()) {
+        try (var in = openZipStream(turbowarpZipUrl)) {
+            if (in == null) {
+                getLogger().warning("Download failed: cannot open " + turbowarpZipUrl);
+                return false;
+            }
             Files.copy(in, tmpZip, StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception e) {
             getLogger().warning("Download failed: " + e.getMessage());
@@ -1235,6 +1239,20 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         } catch (Exception e) {
             getLogger().warning("Failed to copy custom asset " + resourcePath + ": " + e.getMessage());
         }
+    }
+
+    private java.io.InputStream openZipStream(String urlOrPath) {
+        if (urlOrPath == null || urlOrPath.isBlank()) return null;
+        try {
+            var url = new java.net.URL(urlOrPath);
+            return url.openStream();
+        } catch (Exception ignored) {
+            try {
+                var path = Path.of(urlOrPath);
+                if (Files.exists(path)) return Files.newInputStream(path);
+            } catch (Exception ignored2) {}
+        }
+        return null;
     }
 
     private void deleteRecursive(Path path) {

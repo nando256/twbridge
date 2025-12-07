@@ -16,7 +16,7 @@ http:
 turbowarp:
   download:
     enabled: true
-    zipUrl: "https://codeload.github.com/nando256/TurboAgent/zip/refs/heads/main"
+    zipUrl: "https://raw.githubusercontent.com/nando256/TurboAgent/main/turbowarp.zip"
     forceOnStart: false
 pairing:
   enabled: true
