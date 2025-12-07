@@ -1147,6 +1147,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                     return null;
                 }
             }
+            patchDownloadedAssets(targetDir);
             return targetDir;
         } catch (Exception e) {
             getLogger().warning("Preparing TurboWarp assets failed: " + e.getMessage());
@@ -1188,6 +1189,32 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             try { Files.deleteIfExists(tmpZip); } catch (Exception ignored) {}
         }
         return true;
+    }
+
+    private void patchDownloadedAssets(Path root) {
+        patchFile(root.resolve("turboagent.js"));
+        patchFile(root.resolve("turboagent-test.js"));
+    }
+
+    private void patchFile(Path file) {
+        if (file == null || !Files.exists(file)) return;
+        try {
+            var body = Files.readString(file, StandardCharsets.UTF_8);
+            boolean changed = false;
+            if (body.contains("__BLOCK_LIST__")) {
+                body = body.replace("__BLOCK_LIST__", blockChoicesJson);
+                changed = true;
+            }
+            if (body.contains("__EGG_LIST__")) {
+                body = body.replace("__EGG_LIST__", eggChoicesJson);
+                changed = true;
+            }
+            if (changed) {
+                Files.writeString(file, body, StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            getLogger().warning("Patch failed for " + file + ": " + e.getMessage());
+        }
     }
 
     private void deleteRecursive(Path path) {
