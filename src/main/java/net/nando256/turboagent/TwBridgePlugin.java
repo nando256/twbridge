@@ -38,6 +38,10 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HashMap;
@@ -75,6 +79,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String defaultBranch;
     private String blockChoicesJson;
     private String eggChoicesJson;
+    private boolean downloadTurbowarp;
+    private String turbowarpZipUrl;
+    private boolean forceDownloadOnStart;
+    private Path externalTurbowarpRoot;
+    private final String customAssetBase = "turbowarp-custom/";
     private Map<String, byte[]> staticOverrides = Map.of();
     private Map<String, PromptLocale> promptLocales = Map.of();
 
@@ -104,6 +113,13 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         eggChoicesJson = buildEggChoicesJson();
         staticOverrides = prepareStaticOverrides();
         promptLocales = loadPromptLocales();
+        downloadTurbowarp = getConfig().getBoolean("turbowarp.download.enabled", true);
+        turbowarpZipUrl = firstNonBlank(
+            getConfig().getString("turbowarp.download.zipUrl"),
+            "https://github.com/nando256/TurboAgent/releases/download/v3.0.0/www-client.zip"
+        );
+        forceDownloadOnStart = getConfig().getBoolean("turbowarp.download.forceOnStart", false);
+        externalTurbowarpRoot = prepareExternalTurbowarp();
 
         String wsAddr = firstNonBlank(
             getConfig().getString("ws.bindAddress"),
@@ -138,9 +154,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         if (httpEnabled) {
             int cacheSeconds = Math.max(0, getConfig().getInt("http.cacheSeconds", 300));
             try {
-                httpServer = new StaticHttpServer(this, httpBindAddress, httpPort, "turbowarp/", cacheSeconds, staticOverrides);
+                httpServer = new StaticHttpServer(this, httpBindAddress, httpPort, "turbowarp/", cacheSeconds, staticOverrides, externalTurbowarpRoot);
                 httpServer.start();
-                getLogger().info("HTTP: http://" + httpBindAddress + ":" + httpPort + "/");
+                getLogger().info("HTTP: http://" + httpBindAddress + ":" + httpPort + "/ ("
+                    + (externalTurbowarpRoot != null ? "fs " + externalTurbowarpRoot : "classpath")
+                    + ")");
             } catch (Exception e) {
                 getLogger().severe("HTTP Server Failed: " + e.getMessage());
             }
@@ -538,8 +556,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private Map<String, byte[]> prepareStaticOverrides() {
         var map = new HashMap<String, byte[]>();
-        prepareWithBlocks("turbowarp/turboagent.js", map);
-        prepareWithBlocks("turbowarp/turboagent-test.js", map);
+        prepareWithBlocks("turbowarp-custom/turboagent.js", map);
+        prepareWithBlocks("turbowarp-custom/turboagent-test.js", map);
         return map;
     }
 
@@ -1114,6 +1132,136 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         }
         agents.values().removeIf(entry -> entry.entityId().equals(uuid));
         return null;
+    }
+
+    private Path prepareExternalTurbowarp() {
+        if (!downloadTurbowarp) return null;
+        try {
+            var targetDir = new File(getDataFolder(), "turbowarp").toPath();
+            if (forceDownloadOnStart && Files.exists(targetDir)) {
+                deleteRecursive(targetDir);
+            }
+            if (!Files.exists(targetDir)) {
+                Files.createDirectories(targetDir);
+                if (!downloadAndExtractTurbowarp(targetDir)) {
+                    getLogger().warning("Failed to download TurboWarp assets; falling back to classpath resources.");
+                    return null;
+                }
+            }
+            overlayCustomAssets(targetDir);
+            patchDownloadedAssets(targetDir);
+            return targetDir;
+        } catch (Exception e) {
+            getLogger().warning("Preparing TurboWarp assets failed: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private boolean downloadAndExtractTurbowarp(Path targetDir) {
+        getLogger().info("Downloading TurboWarp assets from " + turbowarpZipUrl);
+        var tmpZip = targetDir.resolveSibling("turbowarp.zip");
+        try (var in = openZipStream(turbowarpZipUrl)) {
+            if (in == null) {
+                getLogger().warning("Download failed: cannot open " + turbowarpZipUrl);
+                return false;
+            }
+            Files.copy(in, tmpZip, StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            getLogger().warning("Download failed: " + e.getMessage());
+            return false;
+        }
+        try (var zipIn = new java.util.zip.ZipInputStream(Files.newInputStream(tmpZip))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zipIn.getNextEntry()) != null) {
+                var name = entry.getName();
+                // Expect entries like TurboAgent-main/turbowarp/...
+                var idx = name.indexOf("turbowarp/");
+                if (idx < 0) continue;
+                var relative = name.substring(idx + "turbowarp/".length());
+                if (relative.isEmpty()) continue;
+                var outPath = targetDir.resolve(relative).normalize();
+                if (!outPath.startsWith(targetDir)) continue;
+                if (entry.isDirectory()) {
+                    Files.createDirectories(outPath);
+                } else {
+                    Files.createDirectories(outPath.getParent());
+                    Files.copy(zipIn, outPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        } catch (Exception e) {
+            getLogger().warning("Extract failed: " + e.getMessage());
+            return false;
+        } finally {
+            try { Files.deleteIfExists(tmpZip); } catch (Exception ignored) {}
+        }
+        return true;
+    }
+
+    private void patchDownloadedAssets(Path root) {
+        patchFile(root.resolve("turboagent.js"));
+        patchFile(root.resolve("turboagent-test.js"));
+    }
+
+    private void overlayCustomAssets(Path root) {
+        copyResourceTo(root.resolve("turboagent.js"), customAssetBase + "turboagent.js");
+        copyResourceTo(root.resolve("turboagent-test.js"), customAssetBase + "turboagent-test.js");
+        copyResourceTo(root.resolve("locale/en.json"), customAssetBase + "locale/en.json");
+        copyResourceTo(root.resolve("locale/ja.json"), customAssetBase + "locale/ja.json");
+    }
+
+    private void patchFile(Path file) {
+        if (file == null || !Files.exists(file)) return;
+        try {
+            var body = Files.readString(file, StandardCharsets.UTF_8);
+            boolean changed = false;
+            if (body.contains("__BLOCK_LIST__")) {
+                body = body.replace("__BLOCK_LIST__", blockChoicesJson);
+                changed = true;
+            }
+            if (body.contains("__EGG_LIST__")) {
+                body = body.replace("__EGG_LIST__", eggChoicesJson);
+                changed = true;
+            }
+            if (changed) {
+                Files.writeString(file, body, StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            getLogger().warning("Patch failed for " + file + ": " + e.getMessage());
+        }
+    }
+
+    private void copyResourceTo(Path dest, String resourcePath) {
+        if (dest == null || resourcePath == null) return;
+        try (var is = getResource(resourcePath)) {
+            if (is == null) return;
+            Files.createDirectories(dest.getParent());
+            Files.copy(is, dest, StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            getLogger().warning("Failed to copy custom asset " + resourcePath + ": " + e.getMessage());
+        }
+    }
+
+    private java.io.InputStream openZipStream(String urlOrPath) {
+        if (urlOrPath == null || urlOrPath.isBlank()) return null;
+        try {
+            var url = new java.net.URL(urlOrPath);
+            return url.openStream();
+        } catch (Exception ignored) {
+            try {
+                var path = Path.of(urlOrPath);
+                if (Files.exists(path)) return Files.newInputStream(path);
+            } catch (Exception ignored2) {}
+        }
+        return null;
+    }
+
+    private void deleteRecursive(Path path) {
+        if (path == null || !Files.exists(path)) return;
+        try (var stream = Files.walk(path)) {
+            stream.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try { Files.deleteIfExists(p); } catch (Exception ignored) {}
+            });
+        } catch (Exception ignored) {}
     }
 
     private Location normalizeLocation(Location loc) {

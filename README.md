@@ -39,3 +39,11 @@ Set `HANGAR_API_TOKEN` and run:
 ./gradlew hangarPublish -Phangar.channel=Release -PpaperVersion=1.21.1
 ```
 You can override the plugin version via `-Pversion.override=1.0.0`.
+
+## Credits / Licenses
+
+This project uses **TurboWarp**, which is a modification of Scratch.
+- **TurboWarp**: Copyright (c) 2020-2023 Thomas Weber (GarboMuffin). Licensed under the BSD-3-Clause License.
+- **Scratch**: Copyright (c) 2019 Massachusetts Institute of Technology. Licensed under the BSD-3-Clause License.
+
+Full license text can be found in the web-client directory after installation.

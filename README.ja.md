@@ -27,3 +27,11 @@ TurboAgentはTurboWarp（Scratch）プロジェクト向けのWebSocketブリッ
 - `http.*`: TurboWarp静的ファイルの配信設定（デフォルト 0.0.0.0:8788）
 - `magicLink.*`: トークンTTLやデフォルト言語
 - `debug`: 詳細ログを有効化
+
+## クレジット / ライセンス
+
+本プロジェクトは **TurboWarp**（Scratchの改変版）を利用しています。
+- **TurboWarp**: Copyright (c) 2020-2023 Thomas Weber (GarboMuffin). BSD-3-Clause License.
+- **Scratch**: Copyright (c) 2019 Massachusetts Institute of Technology. BSD-3-Clause License.
+
+ライセンス全文はインストール後のweb-clientディレクトリに含まれています。
