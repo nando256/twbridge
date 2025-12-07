@@ -2,21 +2,21 @@
   // Minimal test extension to verify loading; no WS dependencies.
   const Scratch = (typeof globalThis !== 'undefined' && globalThis.Scratch) ? globalThis.Scratch : null;
   if (!Scratch || !Scratch.extensions || typeof Scratch.extensions.register !== 'function') {
-    console.error('[twbridge-test] Scratch environment not available');
+    console.error('[turboagent-test] Scratch environment not available');
     return;
   }
   const { BlockType } = Scratch;
 
-  class TwBridgeTest {
+  class TurboAgentTest {
     getInfo() {
       return {
-        id: 'twbridgeTest',
-        name: 'Tw Bridge Test',
+        id: 'turboagentTest',
+        name: 'TurboAgent Test',
         blocks: [
           {
             opcode: 'ping',
             blockType: BlockType.REPORTER,
-            text: 'twbridge test (loaded)',
+            text: 'turboagent test (loaded)',
             arguments: {}
           }
         ]
@@ -28,5 +28,5 @@
     }
   }
 
-  Scratch.extensions.register(new TwBridgeTest());
+  Scratch.extensions.register(new TurboAgentTest());
 })();

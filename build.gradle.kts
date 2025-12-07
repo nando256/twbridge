@@ -9,7 +9,7 @@ plugins {
     id("io.papermc.hangar-publish-plugin") version "0.1.3"
 }
 
-group = "net.nando256.twbridge"
+group = "net.nando256.turboagent"
 version = (findProperty("version.override") as String?) ?: "0.1.0"
 
 java {
@@ -40,7 +40,7 @@ tasks.processResources {
 
 tasks {
     withType<Jar>().configureEach {
-        archiveBaseName.set("twbridge")
+        archiveBaseName.set("turboagent")
     }
 
     shadowJar {
@@ -58,7 +58,7 @@ tasks {
 
 hangarPublish {
     publications.register("plugin") {
-        id.set("twbridge")
+        id.set("turboagent")
         version.set(project.version.toString())
         channel.set(providers.gradleProperty("hangar.channel").orElse("Snapshot"))
         apiKey.set(System.getenv("HANGAR_API_TOKEN"))

@@ -1,5 +1,5 @@
 {
-  "extName": "Tw Bridge",
+  "extName": "TurboAgent",
   "blockConnect": "reconnect saved link",
   "blockDisconnect": "disconnect ws",
   "blockIsConnected": "connected?",

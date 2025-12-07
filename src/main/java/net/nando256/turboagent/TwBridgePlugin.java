@@ -1,7 +1,7 @@
-package net.nando256.twbridge;
+package net.nando256.turboagent;
 
-import net.nando256.twbridge.http.StaticHttpServer;
-import net.nando256.twbridge.ws.BridgeServer;
+import net.nando256.turboagent.http.StaticHttpServer;
+import net.nando256.turboagent.ws.BridgeServer;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Color;
@@ -191,7 +191,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             sender.sendMessage("Player only command");
             return true;
         }
-        if (!sender.hasPermission("twbridge.link")) {
+        if (!sender.hasPermission("turboagent.link")) {
             sender.sendMessage("No permission");
             return true;
         }
@@ -207,7 +207,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             return true;
         }
         try {
-            var clickable = new TextComponent("[twbridge] TurboWarp link: ");
+            var clickable = new TextComponent("[TurboAgent] TurboWarp link: ");
             clickable.setColor(net.md_5.bungee.api.ChatColor.AQUA);
             var linkPart = new TextComponent(link);
             linkPart.setColor(net.md_5.bungee.api.ChatColor.AQUA);
@@ -217,7 +217,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             clickable.addExtra(linkPart);
             player.spigot().sendMessage(clickable);
         } catch (Exception ignored) {
-            player.sendMessage(ChatColor.AQUA + "[twbridge] TurboWarp link: " + ChatColor.UNDERLINE + link);
+            player.sendMessage(ChatColor.AQUA + "[TurboAgent] TurboWarp link: " + ChatColor.UNDERLINE + link);
         }
         return true;
     }
@@ -227,7 +227,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         var player = event.getPlayer();
         if (player == null) return;
         if (!magicLinkEnabled) return;
-        if (!player.hasPermission("twbridge.link")) return;
+        if (!player.hasPermission("turboagent.link")) return;
         var link = buildMagicLink(player, null, false);
         if (link == null || link.isBlank()) return;
         sendMagicPrompt(player, link);
@@ -328,11 +328,11 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveExtensionUrl(String lang, String httpHost) {
-        return "http://" + httpHost + ":" + httpPort + "/twbridge.js";
+        return "http://" + httpHost + ":" + httpPort + "/turboagent.js";
     }
 
     private String resolveTestExtensionUrl(String httpHost) {
-        return "http://" + httpHost + ":" + httpPort + "/twbridge-test.js";
+        return "http://" + httpHost + ":" + httpPort + "/turboagent-test.js";
     }
 
     private String ensureHost(String host) {
@@ -538,8 +538,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private Map<String, byte[]> prepareStaticOverrides() {
         var map = new HashMap<String, byte[]>();
-        prepareWithBlocks("turbowarp/twbridge.js", map);
-        prepareWithBlocks("turbowarp/twbridge-test.js", map);
+        prepareWithBlocks("turbowarp/turboagent.js", map);
+        prepareWithBlocks("turbowarp/turboagent-test.js", map);
         return map;
     }
 
@@ -1436,7 +1436,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         static PromptLocale defaultEn() {
             return new PromptLocale(
                 "en",
-                "[twbridge] Use the agent?",
+                "[TurboAgent] Use the agent?",
                 "[Yes]",
                 "[No]",
                 "Click to open",
@@ -1448,7 +1448,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         static PromptLocale defaultJa() {
             return new PromptLocale(
                 "ja",
-                "[twbridge] エージェントを使いますか？",
+                "[TurboAgent] エージェントを使いますか？",
                 "[はい]",
                 "[いいえ]",
                 "クリックで開く",
