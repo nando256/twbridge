@@ -27,6 +27,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.EulerAngle;
 import org.bukkit.util.Vector;
+import org.bukkit.Sound;
 import org.json.JSONObject;
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.ComponentBuilder;
@@ -576,6 +577,23 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         return raw.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    private void playPlacementSound(Material material, Location loc) {
+        if (material == null || loc == null || loc.getWorld() == null) return;
+        try {
+            var data = material.createBlockData();
+            if (data != null && data.getSoundGroup() != null) {
+                var sg = data.getSoundGroup();
+                var sound = sg.getPlaceSound();
+                if (sound != null) {
+                    loc.getWorld().playSound(loc, sound, sg.getVolume(), sg.getPitch());
+                    return;
+                }
+            }
+        } catch (Exception ignored) {}
+        // Fallback generic sound
+        loc.getWorld().playSound(loc, Sound.BLOCK_STONE_PLACE, 1.0f, 1.0f);
+    }
+
     private boolean isSpawnEgg(ItemStack item) {
         if (item == null) return false;
         var type = item.getType();
@@ -989,6 +1007,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                     return;
                 }
                 targetBlock.setType(held.getType(), false);
+                playPlacementSound(held.getType(), targetBlock.getLocation().add(0.5, 0.5, 0.5));
             }
             var newAmount = held.getAmount() - 1;
             inventory.slots[inventory.activeSlot] = newAmount > 0 ? new ItemStack(held.getType(), newAmount) : null;
