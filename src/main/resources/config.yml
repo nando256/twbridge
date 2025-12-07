@@ -13,6 +13,11 @@ http:
   bindAddress: "0.0.0.0"
   port: 8788
   cacheSeconds: 300
+turbowarp:
+  download:
+    enabled: true
+    zipUrl: "https://codeload.github.com/nando256/TurboAgent/zip/refs/heads/main"
+    forceOnStart: false
 pairing:
   enabled: true
   windowSeconds: 60

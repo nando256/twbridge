@@ -11,6 +11,8 @@ import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Map;
 
@@ -20,6 +22,7 @@ public final class StaticHttpServer {
     private final int port;
     private final String resourceBase;
     private final int cacheSeconds;
+    private final Path externalRoot;
     private final Map<String, byte[]> overrides;
     private HttpServer server;
 
@@ -28,13 +31,15 @@ public final class StaticHttpServer {
                             int port,
                             String resourceBase,
                             int cacheSeconds,
-                            Map<String, byte[]> overrides) {
+                            Map<String, byte[]> overrides,
+                            Path externalRoot) {
         this.plugin = plugin;
         this.address = (address == null || address.isBlank()) ? "0.0.0.0" : address;
         this.port = port;
         this.resourceBase = resourceBase == null ? "" : resourceBase;
         this.cacheSeconds = cacheSeconds;
         this.overrides = overrides == null ? Map.of() : overrides;
+        this.externalRoot = externalRoot;
     }
 
     public void start() throws IOException {
@@ -69,20 +74,32 @@ public final class StaticHttpServer {
             }
             var resourcePath = resourceBase + path;
             byte[] bytes = overrides.get(path);
+            if (bytes == null && externalRoot != null) {
+                try {
+                    var filePath = externalRoot.resolve(path).normalize();
+                    if (!filePath.startsWith(externalRoot) || Files.isDirectory(filePath) || !Files.exists(filePath)) {
+                        send(exchange, 404, "not found");
+                        return;
+                    }
+                    bytes = Files.readAllBytes(filePath);
+                } catch (Exception ignored) {}
+            }
             try (InputStream is = bytes == null ? plugin.getResource(resourcePath) : null) {
-                if (bytes == null && is == null) {
-                    send(exchange, 404, "not found");
-                    return;
+                if (bytes == null) {
+                    if (is == null) {
+                        send(exchange, 404, "not found");
+                        return;
+                    }
+                    bytes = is.readAllBytes();
                 }
-                if (bytes == null) bytes = is.readAllBytes();
-                var headers = exchange.getResponseHeaders();
-                headers.add("Content-Type", contentType(path));
-                headers.add("Cache-Control", "public, max-age=" + cacheSeconds);
-                setSecurityHeaders(headers);
-                exchange.sendResponseHeaders(200, bytes.length);
-                try (var os = exchange.getResponseBody()) {
-                    os.write(bytes);
-                }
+            }
+            var headers = exchange.getResponseHeaders();
+            headers.add("Content-Type", contentType(path));
+            headers.add("Cache-Control", "public, max-age=" + cacheSeconds);
+            setSecurityHeaders(headers);
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (var os = exchange.getResponseBody()) {
+                os.write(bytes);
             }
         }
 
