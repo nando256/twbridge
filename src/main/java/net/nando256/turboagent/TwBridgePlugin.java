@@ -83,6 +83,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     private String turbowarpZipUrl;
     private boolean forceDownloadOnStart;
     private Path externalTurbowarpRoot;
+    private final String customAssetBase = "turbowarp-custom/";
     private Map<String, byte[]> staticOverrides = Map.of();
     private Map<String, PromptLocale> promptLocales = Map.of();
 
@@ -555,8 +556,8 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
 
     private Map<String, byte[]> prepareStaticOverrides() {
         var map = new HashMap<String, byte[]>();
-        prepareWithBlocks("turbowarp/turboagent.js", map);
-        prepareWithBlocks("turbowarp/turboagent-test.js", map);
+        prepareWithBlocks("turbowarp-custom/turboagent.js", map);
+        prepareWithBlocks("turbowarp-custom/turboagent-test.js", map);
         return map;
     }
 
@@ -1147,6 +1148,7 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
                     return null;
                 }
             }
+            overlayCustomAssets(targetDir);
             patchDownloadedAssets(targetDir);
             return targetDir;
         } catch (Exception e) {
@@ -1196,6 +1198,13 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
         patchFile(root.resolve("turboagent-test.js"));
     }
 
+    private void overlayCustomAssets(Path root) {
+        copyResourceTo(root.resolve("turboagent.js"), customAssetBase + "turboagent.js");
+        copyResourceTo(root.resolve("turboagent-test.js"), customAssetBase + "turboagent-test.js");
+        copyResourceTo(root.resolve("locale/en.json"), customAssetBase + "locale/en.json");
+        copyResourceTo(root.resolve("locale/ja.json"), customAssetBase + "locale/ja.json");
+    }
+
     private void patchFile(Path file) {
         if (file == null || !Files.exists(file)) return;
         try {
@@ -1214,6 +1223,17 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             }
         } catch (Exception e) {
             getLogger().warning("Patch failed for " + file + ": " + e.getMessage());
+        }
+    }
+
+    private void copyResourceTo(Path dest, String resourcePath) {
+        if (dest == null || resourcePath == null) return;
+        try (var is = getResource(resourcePath)) {
+            if (is == null) return;
+            Files.createDirectories(dest.getParent());
+            Files.copy(is, dest, StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            getLogger().warning("Failed to copy custom asset " + resourcePath + ": " + e.getMessage());
         }
     }
 
