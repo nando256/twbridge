@@ -18,6 +18,17 @@ Japanese README: [README.ja.md](README.ja.md)
 2. Click the link. TurboWarp opens from the local HTTP server (default `http://<bind>:8788`) and connects to WS (default `ws://<bind>:8787`) with the token.
 3. Use the `turboagent` blocks. The token is bound to the player, preventing impersonation.
 
+## Running with Docker
+You can easily run the server using the provided `docker-compose.yml`. 
+In containerized environments, you should set the `TURBOAGENT_ADVERTISED_ADDRESS` environment variable to your host's external IP or domain so the magic link points to the correct address.
+
+```yaml
+    environment:
+      # Set this to your host's external IP or domain
+      TURBOAGENT_ADVERTISED_ADDRESS: "192.168.1.100"
+```
+See the `docker-compose.yml` file in the repository for a complete example.
+
 ## Building
 ```bash
 ./gradlew clean build

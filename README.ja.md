@@ -14,6 +14,17 @@ TurboAgentはTurboWarp（Scratch）プロジェクト向けのWebSocketブリッ
 2. リンクをクリックするとローカルHTTPサーバー（デフォルト `http://<bind>:8788`）からTurboWarpが開き、トークンでWS（デフォルト `ws://<bind>:8787`）に接続します。
 3. `turboagent`ブロックを利用してください。トークンはプレイヤーに紐づくため、他プレイヤーがなりすますことはできません。
 
+## Dockerでの運用
+付属の `docker-compose.yml` を使用して、簡単にサーバーを立ち上げることができます。
+コンテナ環境では、ホストのIPアドレスを環境変数から渡すことで、マジックリンクのURLを動的に設定できます。
+
+```yaml
+    environment:
+      # ホスト側のIPアドレス（またはドメイン）を指定してください
+      TURBOAGENT_ADVERTISED_ADDRESS: "192.168.1.100"
+```
+詳細な構成については、リポジトリ内の `docker-compose.yml` を参照してください。
+
 ## ビルド
 ```bash
 ./gradlew clean build
