@@ -404,6 +404,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveAdvertisedHost(Player player) {
+        var envWs = System.getenv("TURBOAGENT_WS_ADVERTISED_ADDRESS");
+        if (envWs != null && !envWs.isBlank()) return envWs.trim();
+
+        var envGlobal = System.getenv("TURBOAGENT_ADVERTISED_ADDRESS");
+        if (envGlobal != null && !envGlobal.isBlank()) return envGlobal.trim();
+
         var explicit = getConfig().getString("ws.advertisedAddress");
         if (explicit != null && !explicit.isBlank()) return explicit.trim();
 
@@ -439,6 +445,12 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
      * - Never prefer ws.bindAddress here, so that HTTP can still follow the client's route when ws.bindAddress is fixed.
      */
     private String resolveHttpAdvertisedHost(Player player) {
+        var envHttp = System.getenv("TURBOAGENT_HTTP_ADVERTISED_ADDRESS");
+        if (envHttp != null && !envHttp.isBlank()) return envHttp.trim();
+
+        var envGlobal = System.getenv("TURBOAGENT_ADVERTISED_ADDRESS");
+        if (envGlobal != null && !envGlobal.isBlank()) return envGlobal.trim();
+
         var explicit = getConfig().getString("http.advertisedAddress");
         if (explicit != null && !explicit.isBlank()) return explicit.trim();
 
