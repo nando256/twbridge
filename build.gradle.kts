@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "net.nando256.turboagent"
-version = (findProperty("version.override") as String?) ?: "3.0.2+mc1.21.11"
+version = (findProperty("version.override") as String?) ?: "3.0.3+mc1.21.11"
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(21))
