@@ -1,0 +1,22 @@
+services:
+  mc-play:
+    image: docker.io/itzg/minecraft-server:latest
+    container_name: mc-play-paper
+    restart: unless-stopped
+    ports:
+      - "25565:25565" # Minecraft Server
+      - "8788:8788"   # TurboAgent HTTP
+      - "8787:8787"   # TurboAgent WS
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      VERSION: "1.21.11"
+      
+      # TurboAgent Advertised Address (Set this to your host's external IP or domain)
+      TURBOAGENT_ADVERTISED_ADDRESS: "xxx.xxx.xxx.xxx"
+
+      # Auto-download the TurboAgent plugin
+      PLUGINS: |
+        https://hangarcdn.papermc.io/plugins/nando256/TurboAgent/versions/3.0.3%2Bmc1.21.11/PAPER/turboagent-3.0.3%2Bmc1.21.11.jar
+    volumes:
+      - ./data:/data
