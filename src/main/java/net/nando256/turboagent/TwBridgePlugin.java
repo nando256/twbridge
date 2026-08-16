@@ -404,6 +404,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
     }
 
     private String resolveAdvertisedHost(Player player) {
+        var explicit = getConfig().getString("ws.advertisedAddress");
+        if (explicit != null && !explicit.isBlank()) return explicit.trim();
+
         // Explicit bindAddress wins unless it is a wildcard/loopback.
         if (isUsableSpecificHost(wsBindAddress)) return wsBindAddress.trim();
 
@@ -436,6 +439,9 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
      * - Never prefer ws.bindAddress here, so that HTTP can still follow the client's route when ws.bindAddress is fixed.
      */
     private String resolveHttpAdvertisedHost(Player player) {
+        var explicit = getConfig().getString("http.advertisedAddress");
+        if (explicit != null && !explicit.isBlank()) return explicit.trim();
+
         if (player != null && player.getAddress() != null && player.getAddress().getAddress() != null) {
             var localFromChannel = localAddressFromPlayer(player);
             if (localFromChannel != null && !localFromChannel.isBlank()) return localFromChannel;
@@ -1174,10 +1180,15 @@ public final class TwBridgePlugin extends JavaPlugin implements Listener {
             java.util.zip.ZipEntry entry;
             while ((entry = zipIn.getNextEntry()) != null) {
                 var name = entry.getName();
-                // Expect entries like TurboAgent-main/turbowarp/...
+                String relative;
                 var idx = name.indexOf("turbowarp/");
-                if (idx < 0) continue;
-                var relative = name.substring(idx + "turbowarp/".length());
+                if (idx >= 0) {
+                    relative = name.substring(idx + "turbowarp/".length());
+                } else if (name.startsWith("TurboAgent-main/") || name.startsWith("TurboAgent-master/")) {
+                    relative = name.substring(name.indexOf("/") + 1);
+                } else {
+                    relative = name;
+                }
                 if (relative.isEmpty()) continue;
                 var outPath = targetDir.resolve(relative).normalize();
                 if (!outPath.startsWith(targetDir)) continue;
