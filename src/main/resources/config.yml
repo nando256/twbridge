@@ -1,5 +1,6 @@
 ws:
   bindAddress: "0.0.0.0"
+  advertisedAddress: ""
   port: 8787
   requirePairing: true
   requireSession: true
@@ -11,6 +12,7 @@ ws:
 http:
   enabled: true
   bindAddress: "0.0.0.0"
+  advertisedAddress: ""
   port: 8788
   cacheSeconds: 300
 turbowarp:
